@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LOD 2.5 – AOI Building Elevation</title>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+<!-- Leaflet Draw -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+
+<!-- Mapbox -->
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet"/>
+
+<style>
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+#map2d, #map3d {
+  position: absolute;
+  inset: 0;
+}
+
+#map3d {
+  display: none;
+}
+
+.panel {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 9999;
+  background: #ffffff;
+  padding: 10px;
+  border-radius: 6px;
+  font-family: sans-serif;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+
+.panel button {
+  width: 180px;
+  margin-bottom: 6px;
+}
+</style>
+</head>
+
+<body>
+
+<!-- CONTROL PANEL -->
+<div class="panel">
+  <button onclick="runAOIML()">Run ML</button>
+  <button onclick="toggle3DView()">Toggle 3D / Top</button>
+  <button onclick="reselectAOI()">Reselect AOI</button>
+</div>
+
+<div id="map2d"></div>
+<div id="map3d"></div>
+
+<!-- LIBRARIES -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+
+<script>
+/* ================= CONFIG ================= */
+
+mapboxgl.accessToken =
+"pk.eyJ1IjoidmVlcjEwMjQiLCJhIjoiY21pdTduMnJrMGg5djNxcjRydGp4czc3eiJ9.1qqR0xid2EBNBFNb4TmkMg";
+
+const INITIAL_CENTER = [73.1024, 33.6121];
+
+/* ================= STATE ================= */
+
+let aoiRect = null;
+let modelLoaded = false;
+let viewMode = "3d"; // "3d" | "top"
+let mapboxReady = false;
+
+/* ================= 2D MAP ================= */
+
+const map2d = L.map("map2d").setView(
+  [INITIAL_CENTER[1], INITIAL_CENTER[0]],
+  19
+);
+
+L.tileLayer("/tiles/{z}/{x}/{y}.png", {
+  maxZoom: 20
+}).addTo(map2d);
+
+/* AOI LAYER */
+const aoiLayer = new L.FeatureGroup();
+map2d.addLayer(aoiLayer);
+
+/* DRAW CONTROL */
+const drawControl = new L.Control.Draw({
+  draw: {
+    rectangle: {
+      shapeOptions: {
+        color: "yellow",
+        weight: 2,
+        fillOpacity: 0.25
+      }
+    },
+    polygon: false,
+    polyline: false,
+    circle: false,
+    marker: false,
+    circlemarker: false
+  },
+  edit: {
+    featureGroup: aoiLayer,
+    remove: true
+  }
+});
+
+map2d.addControl(drawControl);
+
+/* HANDLE DRAW */
+map2d.on(L.Draw.Event.CREATED, function (e) {
+  aoiLayer.clearLayers();
+  aoiRect = e.layer;
+  aoiLayer.addLayer(aoiRect);
+});
+
+/* ================= 3D MAP ================= */
+
+const map3d = new mapboxgl.Map({
+  container: "map3d",
+  style: "mapbox://styles/mapbox/satellite-v9",
+  center: INITIAL_CENTER,
+  zoom: 19,
+  pitch: 65,
+  bearing: -20,
+  antialias: true
+});
+
+map3d.on("load", () => {
+  mapboxReady = true;
+  console.log("Mapbox 3D ready");
+});
+
+/* ================= ML CALL ================= */
+
+async function runAOIML() {
+  if (!aoiRect) {
+    alert("Draw an AOI rectangle on the map first");
+    return;
+  }
+
+  const b = aoiRect.getBounds();
+
+  const res = await fetch("/run_aoi_ml", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      bounds: [
+        b.getWest(),
+        b.getSouth(),
+        b.getEast(),
+        b.getNorth()
+      ]
+    })
+  });
+
+  const text = await res.text();
+  let data;
+
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    console.error("Backend returned non-JSON:", text);
+    alert("Backend error — check server logs");
+    return;
+  }
+
+  if (!data.geojson) {
+    alert("No buildings detected");
+    return;
+  }
+
+  if (!mapboxReady) {
+    map3d.once("load", () => loadExtrusion(data.geojson));
+  } else {
+    loadExtrusion(data.geojson);
+  }
+
+  show3DView();
+}
+
+/* ================= BUILDINGS HEIHT POPUP ========= */
+
+function enableBuildingClickPopup() {
+  map3d.on("click", "buildings", (e) => {
+    if (!e.features || !e.features.length) return;
+
+    const feature = e.features[0];
+  //   const height = feature.properties.height ?? "N/A";
+
+  //   new mapboxgl.Popup({ closeButton: true })
+  //     .setLngLat(e.lngLat)
+  //     .setHTML(`
+  //       <div style="font-family:sans-serif;">
+  //         <b>Building Height</b><br/>
+  //         ${Number(height).toFixed(1)} m
+  //       </div>
+  //     `)
+  //     .addTo(map3d);
+  
+
+  const height = Number(feature.properties.height);
+
+new mapboxgl.Popup({ closeButton: true })
+  .setLngLat(e.lngLat)
+  .setHTML(`
+    <div style="font-family:sans-serif;">
+      <b>Building Height</b><br/>
+      ${isNaN(height) ? "N/A" : height.toFixed(1)} m
+    </div>
+  `)
+  .addTo(map3d);
+
+  });
+
+
+  // Change cursor on hover
+  map3d.on("mouseenter", "buildings", () => {
+    map3d.getCanvas().style.cursor = "pointer";
+  });
+
+  map3d.on("mouseleave", "buildings", () => {
+    map3d.getCanvas().style.cursor = "";
+  });
+}
+
+
+/* ================= BUILDINGS ================= */
+
+function loadExtrusion(geojsonPath) {
+  if (map3d.getLayer("buildings")) map3d.removeLayer("buildings");
+  if (map3d.getSource("buildings")) map3d.removeSource("buildings");
+
+  // map3d.addSource("buildings", {
+  //   type: "geojson",
+  //   data: "/ml/" + geojsonPath
+  // });
+
+  map3d.addSource("buildings", {
+  type: "geojson",
+  data: "/ml/" + geojsonPath + "?t=" + Date.now()
+});
+
+
+  map3d.addLayer({
+    id: "buildings",
+    type: "fill-extrusion",
+    source: "buildings",
+    paint: {
+      "fill-extrusion-height": ["get", "height"],
+      "fill-extrusion-base": ["coalesce", ["get", "base"], 0],
+      "fill-extrusion-color": "#00FFFF",
+      "fill-extrusion-opacity": 0.85
+    }
+  });
+
+  enableBuildingClickPopup();   // ✅ ADD THIS LINE
+
+  modelLoaded = true;
+}
+
+
+/* ================= VIEW CONTROL ================= */
+
+function show3DView() {
+  document.getElementById("map2d").style.display = "none";
+  document.getElementById("map3d").style.display = "block";
+  map3d.resize();
+  setPerspectiveView();
+  viewMode = "3d";
+}
+
+function toggle3DView() {
+  if (!modelLoaded) return;
+
+  if (viewMode === "3d") {
+    setTopView();
+    viewMode = "top";
+  } else {
+    setPerspectiveView();
+    viewMode = "3d";
+  }
+}
+
+function setPerspectiveView() {
+  map3d.easeTo({
+    pitch: 65,
+    bearing: -20,
+    duration: 600
+  });
+}
+
+function setTopView() {
+  map3d.easeTo({
+    pitch: 0,
+    bearing: 0,
+    duration: 600
+  });
+}
+
+/* ================= RESET ================= */
+
+function reselectAOI() {
+  modelLoaded = false;
+  viewMode = "3d";
+
+  aoiLayer.clearLayers();
+  aoiRect = null;
+
+  if (map3d.getLayer("buildings")) map3d.removeLayer("buildings");
+  if (map3d.getSource("buildings")) map3d.removeSource("buildings");
+
+  document.getElementById("map3d").style.display = "none";
+  document.getElementById("map2d").style.display = "block";
+}
+</script>
+
+</body>
+</html>

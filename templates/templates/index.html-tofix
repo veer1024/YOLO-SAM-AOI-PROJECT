@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LOD 2.5 – AOI Building Elevation</title>
+
+
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+<!-- Leaflet Draw -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+
+<!-- Mapbox -->
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet"/>
+
+<style>
+html, body { margin:0; height:100%; }
+
+
+/* 2D rotation wrapper */
+#map2d-wrapper {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* actual map */
+#map2d {
+  transform-origin: center center;
+  transition: transform 0.1s linear;
+}
+
+#map2d, #map3d { position:absolute; inset:0; }
+#map3d { display:none; }
+
+.panel-left, .panel-right {
+  position:absolute;
+  top:10px;
+  z-index:9999;
+  background:#fff;
+  padding:10px;
+  border-radius:6px;
+  font-family:sans-serif;
+  box-shadow:0 2px 10px rgba(0,0,0,0.3);
+}
+
+.panel-left { left:50px; width:220px; }
+.panel-right { right:10px; width:220px; }
+
+.panel-left button,
+.panel-right button {
+  width:100%;
+  margin-bottom:6px;
+}
+
+#aoiInfo {
+  font-size:13px;
+  margin-top:6px;
+  color:#333;
+}
+</style>
+</head>
+
+<body>
+
+<!-- LEFT PANEL -->
+<div class="panel-left">
+  <button onclick="enableAOISelection()">🟨 Select AOI</button>
+  <button onclick="runAOIML()">🚀 Run ML</button>
+  <button onclick="toggleTiles()">🟪 Toggle Tiles</button>
+  <div id="aoiInfo">AOI: not selected</div>
+
+  <hr/>
+<b>Rotate 2D Map</b><br/>
+
+<input
+  type="range"
+  min="-180"
+  max="180"
+  value="0"
+  id="rotationSlider"
+  style="width:100%;"
+  oninput="rotateMap2D(this.value)"
+/>
+
+<div style="font-size:12px; text-align:center;">
+  <span id="rotationValue">0°</span>
+</div>
+
+<button onclick="resetRotation()">Reset Rotation</button>
+
+</div>
+
+<!-- RIGHT PANEL -->
+<div class="panel-right">
+  <button onclick="toggle3DView()">🧭 Toggle 3D / Top</button>
+  <button onclick="enableFeedbackMode()">🧠 Improve Model</button>
+  <button onclick="clearAll()">♻ Clear</button>
+</div>
+
+<!-- FEEDBACK PANEL -->
+<div id="feedbackPanel" class="panel-right" style="top:160px; display:none;">
+  <b>Improve Model</b><br/><br/>
+
+  <label>
+    <input type="radio" name="fbType" value="missing_building" checked>
+    Missing Building
+  </label><br/>
+
+  <label>
+    <input type="radio" name="fbType" value="wrong_geometry">
+    Wrong Geometry
+  </label><br/>
+
+  <label>
+    <input type="radio" name="fbType" value="not_a_building">
+    🚫 Not a Building
+  </label><br/><br/>
+
+  <small>
+    • Missing / Not-a-building → draw polygon<br/>
+    • Wrong geometry → click building in 3D first
+  </small><br/><br/>
+
+
+
+  <button onclick="submitFeedback()">✅ Submit</button>
+  <button onclick="cancelFeedback()">❌ Cancel</button>
+</div>
+
+
+<div id="map2d-wrapper">
+  <div id="map2d"></div>
+</div>
+
+
+<div id="map3d"></div>
+
+<!-- LIBS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+
+
+
+<script src="https://unpkg.com/three@0.126.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.126.0/examples/js/loaders/GLTFLoader.js"></script>
+
+<script>
+  console.log("THREE revision:", THREE.REVISION);   // 126
+  console.log("GLTFLoader:", THREE.GLTFLoader);     // function
+</script>
+
+
+<!-- Geometry Util (CRITICAL) -->
+<script src="https://unpkg.com/leaflet-geometryutil@0.10.1/src/leaflet.geometryutil.js"></script>
+
+
+
+<script>
+/* ================= CONFIG ================= */
+
+mapboxgl.accessToken = "pk.eyJ1IjoidmVlcjEwMjQiLCJhIjoiY21pdTduMnJrMGg5djNxcjRydGp4czc3eiJ9.1qqR0xid2EBNBFNb4TmkMg";
+
+
+
+const CENTER = [73.1024, 33.6121];
+
+/* ================= STATE ================= */
+
+let aoiRect = null;
+let modelLoaded = false;
+let viewMode = "3d";
+let drawEnabled = false;
+
+let feedbackMode = false;
+let feedbackPoints = [];
+let selectedOriginalGeometry = null;
+let highlightedFeatureId = null;
+
+const aoiLayer = new L.FeatureGroup();
+const feedbackLayer = new L.FeatureGroup();
+const tileDebugLayer = L.layerGroup();
+
+
+/* ================= tile function ======== */
+function drawTiles(tileBoundsList) {
+  tileDebugLayer.clearLayers();
+
+  tileBoundsList.forEach((b, i) => {
+    const rect = L.rectangle(
+      [[b[1], b[0]], [b[3], b[2]]], // southWest, northEast
+      {
+        color: "#FF00FF",
+        weight: 1,
+        fillOpacity: 0.05,
+        dashArray: "4,4"
+      }
+    );
+
+    rect.bindTooltip(`Tile ${i + 1}`, { permanent: false });
+    tileDebugLayer.addLayer(rect);
+  });
+}
+
+
+let tilesVisible = true;
+
+function toggleTiles(){
+  tilesVisible = !tilesVisible;
+  if(tilesVisible){
+    map2d.addLayer(tileDebugLayer);
+  } else {
+    map2d.removeLayer(tileDebugLayer);
+  }
+}
+
+
+/* ================= MAP 2D ================= */
+
+const map2d = L.map("map2d").setView([CENTER[1], CENTER[0]], 19);
+L.tileLayer("/tiles/{z}/{x}/{y}.png", { maxZoom:20 }).addTo(map2d);
+map2d.addLayer(aoiLayer);
+map2d.addLayer(feedbackLayer);
+map2d.addLayer(tileDebugLayer);
+
+
+/* ================= MAP 2D rotation ================= */
+
+let currentRotation = 0;
+
+function rotateMap2D(deg){
+  currentRotation = deg;
+  document.getElementById("map2d").style.transform =
+    `rotate(${deg}deg)`;
+
+  document.getElementById("rotationValue").innerText = `${deg}°`;
+
+  if(deg != 0){
+  document.getElementById("aoiInfo").innerHTML =
+    `AOI: not selected<br/><small>⚠ Map rotated (${deg}°)</small>`;
+}
+
+
+  // 🔑 Important: fix mouse interaction after transform
+  map2d.invalidateSize();
+
+
+}
+
+function resetRotation(){
+  rotateMap2D(0);
+  document.getElementById("rotationSlider").value = 0;
+}
+
+
+/* =================== HELPER ================= */
+
+function resetPolygonState() {
+  feedbackPoints = [];
+  feedbackLayer.clearLayers();
+}
+
+
+/* ================= AOI DRAW ================= */
+
+const drawControl = new L.Control.Draw({
+  draw: {
+    rectangle: { shapeOptions:{ color:"yellow", fillOpacity:0.2 } },
+    polygon:false, polyline:false, circle:false, marker:false, circlemarker:false
+  },
+  edit: { featureGroup: aoiLayer, remove:true }
+});
+
+
+
+
+
+
+function enableAOISelection(){
+  // 🔒 Leaflet Draw cannot work on rotated map
+  if(currentRotation !== 0){
+    alert("Map rotation will be reset for AOI selection.");
+    resetRotation();
+  }
+
+  if(!drawEnabled){
+    map2d.addControl(drawControl);
+    drawEnabled = true;
+  }
+}
+
+
+map2d.on(L.Draw.Event.CREATED, e => {
+  aoiLayer.clearLayers();
+  aoiRect = e.layer;
+  aoiLayer.addLayer(aoiRect);
+
+  const area = L.GeometryUtil.geodesicArea(
+    aoiRect.getLatLngs()[0]
+  );
+
+  document.getElementById("aoiInfo").innerHTML =
+    `AOI Area: ${area.toFixed(0)} m²`;
+});
+
+/* ================= MAP 3D ================= */
+
+// const map3d = new mapboxgl.Map({
+//   container:"map3d",
+//   style:"mapbox://styles/mapbox/satellite-v9",
+//   center:CENTER,
+//   zoom:19,
+//   pitch:65,
+//   bearing:-20,
+//   antialias:true
+// });
+
+
+const map3d = new mapboxgl.Map({
+  container: "map3d",
+  style: {
+    version: 8,
+    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+    sources: {},
+    layers: []
+  },
+  center: CENTER,
+  zoom: 19,
+  pitch: 65,
+  bearing: -20,
+  antialias: true
+});
+
+
+// const map3d = new mapboxgl.Map({
+//   container: "map3d",
+//   style: {
+//     version: 8,
+//     sources: {},
+//     layers: []
+//   },
+//   center: CENTER,
+//   zoom: 19,
+//   pitch: 65,
+//   bearing: -20,
+//   antialias: true
+// });
+
+
+
+/* ============= BUILDING HOVER ================== */
+
+const hoverPopup = new mapboxgl.Popup({
+  closeButton: false,
+  closeOnClick: false,
+  offset: 10
+});
+
+
+/* ================= VIEW ================= */
+
+
+function show2DView(){
+  document.getElementById("map3d").style.display="none";
+  document.getElementById("map2d-wrapper").style.display="block";
+  setTimeout(()=>map2d.invalidateSize(),200);
+}
+
+function show3DView(){
+  document.getElementById("map2d-wrapper").style.display="none";
+  document.getElementById("map3d").style.display="block";
+  map3d.resize();
+}
+
+
+function toggle3DView(){
+  if(!modelLoaded) return;
+  map3d.easeTo(viewMode==="3d"
+    ? { pitch:0, bearing:0 }
+    : { pitch:65, bearing:-20 }
+  );
+  viewMode = viewMode==="3d" ? "top" : "3d";
+}
+
+/* ================= RUN ML ================= */
+
+function computeGeoJSONAnchor(geojson) {
+  let sx = 0, sy = 0, n = 0;
+
+  geojson.features.forEach(f => {
+    if (f.properties.feature_type !== "building") return;
+
+    const coords = f.geometry.coordinates[0];
+    coords.forEach(c => {
+      sx += c[0];
+      sy += c[1];
+      n++;
+    });
+  });
+
+  return [sx / n, sy / n];
+}
+
+
+/* ================== GLBLoader Function ===================== */
+
+function addGLBModelFromMercator(modelTransform) {
+
+  const scale = modelTransform.meterInMercatorCoordinateUnits();
+
+  const customLayer = {
+    id: "aoi-glb-model",
+    type: "custom",
+    renderingMode: "3d",
+
+    onAdd(map, gl) {
+  this.map = map; // ✅ REQUIRED
+  this.camera = new THREE.Camera();
+  this.scene = new THREE.Scene();
+
+  const light = new THREE.DirectionalLight(0xffffff, 1);
+  light.position.set(0, -70, 100).normalize();
+  this.scene.add(light);
+
+  this.renderer = new THREE.WebGLRenderer({
+    canvas: map.getCanvas(),
+    context: gl,
+    antialias: true
+  });
+  this.renderer.autoClear = false;
+
+  //const loader = new window.GLTFLoader();
+  const loader = new THREE.GLTFLoader();
+  loader.load("/ml/output/aoi_buildings.glb", gltf => {
+    this.model = gltf.scene;
+    this.model.scale.set(scale, scale, scale);
+    this.model.rotation.x = Math.PI / 2;
+    this.scene.add(this.model);
+  });
+},
+
+    render(gl, matrix) {
+  this.camera.projectionMatrix =
+    new THREE.Matrix4().fromArray(matrix);
+
+  this.renderer.resetState();
+  this.renderer.render(this.scene, this.camera);
+  this.map.triggerRepaint();
+}
+ };
+
+  if (map3d.getLayer("aoi-glb-model")) {
+    map3d.removeLayer("aoi-glb-model");
+  }
+
+  map3d.addLayer(customLayer);
+}
+
+async function runAOIML(){
+  if(!aoiRect){
+    alert("❌ Draw AOI first");
+    return;
+  }
+
+  const b = aoiRect.getBounds();
+
+  const res = await fetch("/run_aoi_ml",{
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({
+      bounds:[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()]
+    })
+  });
+
+  const data = await res.json();
+
+  if(!data.geojson){
+    alert("No buildings detected");
+    return;
+  }
+
+  const geojson = await fetch("/ml/" + data.geojson).then(r => r.json());
+
+  
+
+  loadBuildings(data.geojson);
+
+  //const anchor = data.anchor;
+  const {lon,lat} = data.anchor;
+
+  const modelTransform =
+    mapboxgl.MercatorCoordinate.fromLngLat(
+      [lon, lat],
+      0
+    );
+
+  addGLBModelFromMercator(modelTransform);
+
+  // const merc = new mapboxgl.MercatorCoordinate(
+  //   anchor.x,
+  //   anchor.y,
+  //   0
+  // );
+
+  // addGLBModelFromMercator(merc);
+  modelLoaded = true;
+
+  // 🔍 DEBUG: visualize tiles
+  if (data.tiles && data.tiles.length > 0) {
+    drawTiles(data.tiles);
+  } else {
+    tileDebugLayer.clearLayers();
+  }
+
+  show3DView();
+
+}
+
+
+/* ================= BUILDINGS ================= */
+
+map3d.on("load", () => {
+
+  map3d.addSource("custom-tiles", {
+    type: "raster",
+    tiles: [
+      "/tiles/{z}/{x}/{y}.png"
+    ],
+    tileSize: 256,
+    maxzoom: 20
+  });
+
+  map3d.addLayer({
+    id: "custom-tiles-layer",
+    type: "raster",
+    source: "custom-tiles",
+    paint: {
+      "raster-opacity": 1.0
+    }
+  });
+
+});
+
+
+function loadBuildings(path){
+  if(map3d.getLayer("buildings")) map3d.removeLayer("buildings");
+  if(map3d.getSource("buildings")) map3d.removeSource("buildings");
+
+  //map3d.addSource("buildings",{ type:"geojson", data:"/ml/"+path });
+  map3d.addSource("buildings", {
+  type: "geojson",
+  data: "/ml/" + path,
+  generateId: true   // 🔑 REQUIRED
+});
+
+
+
+
+// 1️⃣ ADD BUILDINGS FIRST
+map3d.addLayer({
+  id:"buildings",
+  type:"fill-extrusion",
+  source:"buildings",
+  paint:{
+    "fill-extrusion-color": [
+      "interpolate",
+      ["linear"],
+      ["get", "confidence"],
+      0.4, "#FF3333",
+      0.7, "#FFA500",
+      0.9, "#00FF99"
+    ],
+    "fill-extrusion-height":["get","height"],
+    "fill-extrusion-opacity":0.85
+  }
+});
+
+map3d.addLayer(
+  {
+    id: "building-shadows",
+    type: "fill",
+    source: "buildings",
+    paint: {
+      "fill-color": "rgba(0,0,0,0.6)",
+      "fill-opacity": 0.6
+    },
+    filter: ["==", ["get", "feature_type"], "shadow"]
+  },
+  "buildings"
+);
+
+
+
+map3d.on("click", "buildings", e => {
+  if (!feedbackMode) return;
+
+  const type = document.querySelector(
+    'input[name="fbType"]:checked'
+  ).value;
+
+  // ❌ Missing building must never use 3D click
+  if(type === "missing_building"){
+    alert("Missing building → draw polygon in 2D");
+    return;
+  }
+
+  const feature = e.features[0];
+  selectedOriginalGeometry = feature.geometry;
+  highlightedFeatureId = feature.id;
+
+
+  // Reset highlight
+  map3d.setPaintProperty("buildings", "fill-extrusion-color", "#00FFFF");
+
+  map3d.setFeatureState(
+    { source: "buildings", id: highlightedFeatureId },
+    { selected: true }
+  );
+
+  // 🔴 NOT A BUILDING
+  if (type === "not_a_building") {
+    map3d.setPaintProperty("buildings", "fill-extrusion-color", [
+      "case",
+      ["boolean", ["feature-state", "selected"], false],
+      "#FF3333",
+      "#00FFFF"
+    ]);
+
+    new mapboxgl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML("<b>Marked:</b> 🚫 Not a Building")
+      .addTo(map3d);
+
+    alert("Marked as NOT A BUILDING.\nClick Submit to confirm.");
+    return;
+  }
+
+  // ❌ WRONG GEOMETRY
+  if (type === "wrong_geometry") {
+    map3d.setPaintProperty("buildings", "fill-extrusion-color", [
+      "case",
+      ["boolean", ["feature-state", "selected"], false],
+      "#FFA500", // 🟠 orange = wrong geometry
+      "#00FFFF"
+    ]);
+
+    new mapboxgl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML("<b>Wrong Geometry</b><br/>Redraw correct footprint in 2D")
+      .addTo(map3d);
+
+    // 🔑 SWITCH TO 2D FOR DRAWING
+    show2DView();
+    alert("Now redraw the correct footprint in 2D.");
+    return;
+  }
+
+  // ⛔ Missing building should NOT use 3D click
+  alert("Missing building: draw polygon in 2D.");
+});
+
+
+
+
+
+  //modelLoaded = true;
+}
+
+
+
+
+/* ========= on hover building handler ========== */
+
+map3d.on("mousemove", "buildings", e => {
+  const f = e.features[0];
+  if (!f) return;
+
+  map3d.getCanvas().style.cursor = "pointer";
+
+  hoverPopup
+    .setLngLat(e.lngLat)
+    .setHTML(`
+      <div style="font-size:12px">
+        <b>${f.properties.id}</b><br/>
+        Height: ${Number(f.properties.height).toFixed(2)} m<br/>
+        Confidence: ${(f.properties.confidence * 100).toFixed(1)}%
+      </div>
+    `)
+    .addTo(map3d);
+});
+
+
+map3d.on("mousemove", "building-shadows", e => {
+  const f = e.features[0];
+  if (!f) return;
+
+  hoverPopup
+    .setLngLat(e.lngLat)
+    .setHTML(`
+      <div style="font-size:12px;color:#ff3333">
+        <b>${f.properties.id}</b><br/>
+        Shadow length: ${Number(f.properties.shadow_len).toFixed(2)} m<br/>
+        Azimuth: ${Number(f.properties.shadow_azimuth).toFixed(1)}°
+      </div>
+    `)
+    .addTo(map3d);
+});
+
+
+
+map3d.on("mouseleave", "buildings", () => {
+  map3d.getCanvas().style.cursor = "";
+  hoverPopup.remove();
+});
+
+map3d.on("mouseleave", "building-shadows", () => {
+   map3d.getCanvas().style.cursor = "";
+  hoverPopup.remove();
+});
+
+/* =================== GLB LOADER ============ */
+
+
+
+
+/* ================= FEEDBACK ================= */
+
+function enableFeedbackMode(){
+  feedbackMode = true;
+  feedbackPoints = [];
+  selectedOriginalGeometry = null;
+  feedbackLayer.clearLayers();
+  document.getElementById("feedbackPanel").style.display="block";
+
+  if(highlightedFeatureId !== null){
+  map3d.setFeatureState(
+    { source:"buildings", id: highlightedFeatureId },
+    { selected:false }
+  );
+  highlightedFeatureId = null;
+}
+
+}
+
+map2d.on("click", e=>{
+  if(!feedbackMode) return;
+
+  const type = document.querySelector('input[name="fbType"]:checked').value;
+
+  if(type==="wrong_geometry" && !selectedOriginalGeometry){
+    alert("Click the wrong building in 3D first");
+    return;
+  }
+
+  feedbackPoints.push([e.latlng.lng, e.latlng.lat]);
+  feedbackLayer.clearLayers();
+
+  if(feedbackPoints.length>2){
+    const poly = [...feedbackPoints, feedbackPoints[0]];
+    L.polygon(poly.map(p=>[p[1],p[0]]),
+      {color:"red",fillOpacity:0.3}
+    ).addTo(feedbackLayer);
+  } else {
+    L.circleMarker(e.latlng,{radius:5,color:"red"}).addTo(feedbackLayer);
+  }
+});
+
+async function submitFeedback(){
+  const type = document.querySelector(
+    'input[name="fbType"]:checked'
+  ).value;
+
+  const payload = { type };
+
+  // 🚫 CLICK-BASED NOT A BUILDING
+  if(type === "not_a_building"){
+    if(!selectedOriginalGeometry){
+      alert("Click the wrong object in 3D first");
+      return;
+    }
+    payload.original_geometry = selectedOriginalGeometry;
+  }
+
+  // ✏️ DRAW-BASED FEEDBACK
+  else {
+    if(feedbackPoints.length < 3){
+      alert("Select at least 3 points");
+      return;
+    }
+
+    payload.geometry = {
+      type:"Polygon",
+      coordinates:[[...feedbackPoints, feedbackPoints[0]]]
+    };
+
+    if(type === "wrong_geometry"){
+      payload.original_geometry = selectedOriginalGeometry;
+    }
+  }
+
+
+
+
+  await fetch("/feedback", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(payload)
+});
+
+alert("✅ Feedback saved");
+
+// 🔁 SPECIAL HANDLING FOR WRONG GEOMETRY
+if (type === "wrong_geometry") {
+  resetPolygonState();
+
+  // clear selected building highlight
+  if (highlightedFeatureId !== null) {
+    map3d.setFeatureState(
+      { source: "buildings", id: highlightedFeatureId },
+      { selected: false }
+    );
+    highlightedFeatureId = null;
+  }
+
+  selectedOriginalGeometry = null;
+  alert("Saved. Click another building in 3D to continue fixing geometry.");
+
+
+  // 🔑 SWITCH BACK TO 3D
+  show3DView();
+
+  // stay in feedback mode for next correction
+  return;
+}
+
+// all other feedback types
+cancelFeedback();
+
+}
+
+
+
+
+function cancelFeedback(){
+  feedbackMode = false;
+  feedbackPoints = [];
+  selectedOriginalGeometry = null;
+
+  if(highlightedFeatureId !== null){
+    map3d.setFeatureState(
+      { source: "buildings", id: highlightedFeatureId },
+      { selected: false }
+    );
+    highlightedFeatureId = null;
+  }
+
+  feedbackLayer.clearLayers();
+  document.getElementById("feedbackPanel").style.display = "none";
+}
+
+
+/* ================= RESET ================= */
+
+function clearAll(){
+  aoiLayer.clearLayers();
+  feedbackLayer.clearLayers();
+  aoiRect=null;
+  modelLoaded=false;
+  feedbackMode=false;
+  document.getElementById("aoiInfo").innerHTML="AOI: not selected";
+}
+</script>
+
+</body>
+</html>

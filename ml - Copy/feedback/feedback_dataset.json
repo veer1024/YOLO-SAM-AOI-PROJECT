@@ -1,0 +1,198 @@
+[
+  {
+    "id": "1d530708-b4b9-4ae9-92bc-704d9ebee07f",
+    "type": "missing_building",
+    "image": "ml/feedback/missing_building/images/1d530708-b4b9-4ae9-92bc-704d9ebee07f.png",
+    "mask": "ml/feedback/missing_building/masks/1d530708-b4b9-4ae9-92bc-704d9ebee07f.png",
+    "metadata": "ml/feedback/missing_building/metadata/1d530708-b4b9-4ae9-92bc-704d9ebee07f.json"
+  },
+  {
+    "id": "2613a3de-debd-4937-a5d4-b5de8740d2c0",
+    "type": "missing_building",
+    "image": "ml/feedback/missing_building/images/2613a3de-debd-4937-a5d4-b5de8740d2c0.png",
+    "mask": "ml/feedback/missing_building/masks/2613a3de-debd-4937-a5d4-b5de8740d2c0.png",
+    "metadata": "ml/feedback/missing_building/metadata/2613a3de-debd-4937-a5d4-b5de8740d2c0.json"
+  },
+  {
+    "id": "4843aa50-fd6c-4854-be58-7ff804744690",
+    "type": "missing_building",
+    "image": "ml/feedback/missing_building/images/4843aa50-fd6c-4854-be58-7ff804744690.png",
+    "mask": "ml/feedback/missing_building/masks/4843aa50-fd6c-4854-be58-7ff804744690.png",
+    "metadata": "ml/feedback/missing_building/metadata/4843aa50-fd6c-4854-be58-7ff804744690.json"
+  },
+  {
+    "id": "76bb6817-1cdf-4670-a793-fe82fc91b838",
+    "type": "missing_building",
+    "image": "ml/feedback/missing_building/images/76bb6817-1cdf-4670-a793-fe82fc91b838.png",
+    "mask": "ml/feedback/missing_building/masks/76bb6817-1cdf-4670-a793-fe82fc91b838.png",
+    "metadata": "ml/feedback/missing_building/metadata/76bb6817-1cdf-4670-a793-fe82fc91b838.json"
+  },
+  {
+    "id": "7f8a9420-aa76-4020-baa3-8b65cb938043",
+    "type": "missing_building",
+    "image": "ml/feedback/missing_building/images/7f8a9420-aa76-4020-baa3-8b65cb938043.png",
+    "mask": "ml/feedback/missing_building/masks/7f8a9420-aa76-4020-baa3-8b65cb938043.png",
+    "metadata": "ml/feedback/missing_building/metadata/7f8a9420-aa76-4020-baa3-8b65cb938043.json"
+  },
+  {
+    "id": "8a880412-0db7-4cd2-9e50-0578282affaf",
+    "type": "missing_building",
+    "image": "ml/feedback/missing_building/images/8a880412-0db7-4cd2-9e50-0578282affaf.png",
+    "mask": "ml/feedback/missing_building/masks/8a880412-0db7-4cd2-9e50-0578282affaf.png",
+    "metadata": "ml/feedback/missing_building/metadata/8a880412-0db7-4cd2-9e50-0578282affaf.json"
+  },
+  {
+    "id": "9fc28d2c-3eaf-4455-88df-43ebab00dad3",
+    "type": "missing_building",
+    "image": "ml/feedback/missing_building/images/9fc28d2c-3eaf-4455-88df-43ebab00dad3.png",
+    "mask": "ml/feedback/missing_building/masks/9fc28d2c-3eaf-4455-88df-43ebab00dad3.png",
+    "metadata": "ml/feedback/missing_building/metadata/9fc28d2c-3eaf-4455-88df-43ebab00dad3.json"
+  },
+  {
+    "id": "a764d80c-0fe8-411c-b1e1-c924eca96586",
+    "type": "missing_building",
+    "image": "ml/feedback/missing_building/images/a764d80c-0fe8-411c-b1e1-c924eca96586.png",
+    "mask": "ml/feedback/missing_building/masks/a764d80c-0fe8-411c-b1e1-c924eca96586.png",
+    "metadata": "ml/feedback/missing_building/metadata/a764d80c-0fe8-411c-b1e1-c924eca96586.json"
+  },
+  {
+    "id": "ad68fcf9-3132-435e-8e02-192e619951ee",
+    "type": "missing_building",
+    "image": "ml/feedback/missing_building/images/ad68fcf9-3132-435e-8e02-192e619951ee.png",
+    "mask": "ml/feedback/missing_building/masks/ad68fcf9-3132-435e-8e02-192e619951ee.png",
+    "metadata": "ml/feedback/missing_building/metadata/ad68fcf9-3132-435e-8e02-192e619951ee.json"
+  },
+  {
+    "id": "ae45e7ec-b28d-4a09-ac74-15b45f691f5b",
+    "type": "missing_building",
+    "image": "ml/feedback/missing_building/images/ae45e7ec-b28d-4a09-ac74-15b45f691f5b.png",
+    "mask": "ml/feedback/missing_building/masks/ae45e7ec-b28d-4a09-ac74-15b45f691f5b.png",
+    "metadata": "ml/feedback/missing_building/metadata/ae45e7ec-b28d-4a09-ac74-15b45f691f5b.json"
+  },
+  {
+    "id": "b6ab605e-6407-4752-93f5-15e1af903c70",
+    "type": "missing_building",
+    "image": "ml/feedback/missing_building/images/b6ab605e-6407-4752-93f5-15e1af903c70.png",
+    "mask": "ml/feedback/missing_building/masks/b6ab605e-6407-4752-93f5-15e1af903c70.png",
+    "metadata": "ml/feedback/missing_building/metadata/b6ab605e-6407-4752-93f5-15e1af903c70.json"
+  },
+  {
+    "id": "e2846f12-2ff4-48a2-82c5-01c22521dc97",
+    "type": "missing_building",
+    "image": "ml/feedback/missing_building/images/e2846f12-2ff4-48a2-82c5-01c22521dc97.png",
+    "mask": "ml/feedback/missing_building/masks/e2846f12-2ff4-48a2-82c5-01c22521dc97.png",
+    "metadata": "ml/feedback/missing_building/metadata/e2846f12-2ff4-48a2-82c5-01c22521dc97.json"
+  },
+  {
+    "id": "e31f8a91-f2c2-461f-b7f5-0f78143cc75d",
+    "type": "missing_building",
+    "image": "ml/feedback/missing_building/images/e31f8a91-f2c2-461f-b7f5-0f78143cc75d.png",
+    "mask": "ml/feedback/missing_building/masks/e31f8a91-f2c2-461f-b7f5-0f78143cc75d.png",
+    "metadata": "ml/feedback/missing_building/metadata/e31f8a91-f2c2-461f-b7f5-0f78143cc75d.json"
+  },
+  {
+    "id": "ef78add6-7ed5-44e4-8b84-339993ca8b61",
+    "type": "missing_building",
+    "image": "ml/feedback/missing_building/images/ef78add6-7ed5-44e4-8b84-339993ca8b61.png",
+    "mask": "ml/feedback/missing_building/masks/ef78add6-7ed5-44e4-8b84-339993ca8b61.png",
+    "metadata": "ml/feedback/missing_building/metadata/ef78add6-7ed5-44e4-8b84-339993ca8b61.json"
+  },
+  {
+    "id": "61cd1d72-b573-4912-bbc6-b00a20e7a945",
+    "type": "wrong_geometry",
+    "image": "ml/feedback/wrong_geometry/images/61cd1d72-b573-4912-bbc6-b00a20e7a945.png",
+    "mask": "ml/feedback/wrong_geometry/masks/61cd1d72-b573-4912-bbc6-b00a20e7a945_correct.png",
+    "metadata": "ml/feedback/wrong_geometry/metadata/61cd1d72-b573-4912-bbc6-b00a20e7a945.json"
+  },
+  {
+    "id": "b73f5f37-9576-4a3e-8c06-02e4097e35cf",
+    "type": "wrong_geometry",
+    "image": "ml/feedback/wrong_geometry/images/b73f5f37-9576-4a3e-8c06-02e4097e35cf.png",
+    "mask": "ml/feedback/wrong_geometry/masks/b73f5f37-9576-4a3e-8c06-02e4097e35cf_correct.png",
+    "metadata": "ml/feedback/wrong_geometry/metadata/b73f5f37-9576-4a3e-8c06-02e4097e35cf.json"
+  },
+  {
+    "id": "ed259548-fb8c-4168-912a-ea6937cb1872",
+    "type": "wrong_geometry",
+    "image": "ml/feedback/wrong_geometry/images/ed259548-fb8c-4168-912a-ea6937cb1872.png",
+    "mask": "ml/feedback/wrong_geometry/masks/ed259548-fb8c-4168-912a-ea6937cb1872_correct.png",
+    "metadata": "ml/feedback/wrong_geometry/metadata/ed259548-fb8c-4168-912a-ea6937cb1872.json"
+  },
+  {
+    "id": "0c78bf40-1315-4c47-98fd-83657ae3d090",
+    "type": "not_a_building",
+    "image": "ml/feedback/not_a_building/images/0c78bf40-1315-4c47-98fd-83657ae3d090.png",
+    "mask": "ml/feedback/not_a_building/masks/0c78bf40-1315-4c47-98fd-83657ae3d090.png",
+    "metadata": "ml/feedback/not_a_building/metadata/0c78bf40-1315-4c47-98fd-83657ae3d090.json"
+  },
+  {
+    "id": "0cc18b2f-db60-4a52-84ff-bfe63e84f890",
+    "type": "not_a_building",
+    "image": "ml/feedback/not_a_building/images/0cc18b2f-db60-4a52-84ff-bfe63e84f890.png",
+    "mask": "ml/feedback/not_a_building/masks/0cc18b2f-db60-4a52-84ff-bfe63e84f890.png",
+    "metadata": "ml/feedback/not_a_building/metadata/0cc18b2f-db60-4a52-84ff-bfe63e84f890.json"
+  },
+  {
+    "id": "14d62f87-4bf5-4003-aed5-27e1e0425ff8",
+    "type": "not_a_building",
+    "image": "ml/feedback/not_a_building/images/14d62f87-4bf5-4003-aed5-27e1e0425ff8.png",
+    "mask": "ml/feedback/not_a_building/masks/14d62f87-4bf5-4003-aed5-27e1e0425ff8.png",
+    "metadata": "ml/feedback/not_a_building/metadata/14d62f87-4bf5-4003-aed5-27e1e0425ff8.json"
+  },
+  {
+    "id": "19926724-495e-495f-b4f4-a87a7dcce990",
+    "type": "not_a_building",
+    "image": "ml/feedback/not_a_building/images/19926724-495e-495f-b4f4-a87a7dcce990.png",
+    "mask": "ml/feedback/not_a_building/masks/19926724-495e-495f-b4f4-a87a7dcce990.png",
+    "metadata": "ml/feedback/not_a_building/metadata/19926724-495e-495f-b4f4-a87a7dcce990.json"
+  },
+  {
+    "id": "1bce65ad-d0e2-4828-b42d-ab9374f58c8a",
+    "type": "not_a_building",
+    "image": "ml/feedback/not_a_building/images/1bce65ad-d0e2-4828-b42d-ab9374f58c8a.png",
+    "mask": "ml/feedback/not_a_building/masks/1bce65ad-d0e2-4828-b42d-ab9374f58c8a.png",
+    "metadata": "ml/feedback/not_a_building/metadata/1bce65ad-d0e2-4828-b42d-ab9374f58c8a.json"
+  },
+  {
+    "id": "24054101-a430-478d-994d-7ea3b3d30aeb",
+    "type": "not_a_building",
+    "image": "ml/feedback/not_a_building/images/24054101-a430-478d-994d-7ea3b3d30aeb.png",
+    "mask": "ml/feedback/not_a_building/masks/24054101-a430-478d-994d-7ea3b3d30aeb.png",
+    "metadata": "ml/feedback/not_a_building/metadata/24054101-a430-478d-994d-7ea3b3d30aeb.json"
+  },
+  {
+    "id": "5b779c00-d669-48a1-a68e-f077b797f7ee",
+    "type": "not_a_building",
+    "image": "ml/feedback/not_a_building/images/5b779c00-d669-48a1-a68e-f077b797f7ee.png",
+    "mask": "ml/feedback/not_a_building/masks/5b779c00-d669-48a1-a68e-f077b797f7ee.png",
+    "metadata": "ml/feedback/not_a_building/metadata/5b779c00-d669-48a1-a68e-f077b797f7ee.json"
+  },
+  {
+    "id": "97ecab48-fea3-4c5a-9d1e-cce07730233c",
+    "type": "not_a_building",
+    "image": "ml/feedback/not_a_building/images/97ecab48-fea3-4c5a-9d1e-cce07730233c.png",
+    "mask": "ml/feedback/not_a_building/masks/97ecab48-fea3-4c5a-9d1e-cce07730233c.png",
+    "metadata": "ml/feedback/not_a_building/metadata/97ecab48-fea3-4c5a-9d1e-cce07730233c.json"
+  },
+  {
+    "id": "af1ffb9c-4ee3-488b-8e4a-6e87372c7d2e",
+    "type": "not_a_building",
+    "image": "ml/feedback/not_a_building/images/af1ffb9c-4ee3-488b-8e4a-6e87372c7d2e.png",
+    "mask": "ml/feedback/not_a_building/masks/af1ffb9c-4ee3-488b-8e4a-6e87372c7d2e.png",
+    "metadata": "ml/feedback/not_a_building/metadata/af1ffb9c-4ee3-488b-8e4a-6e87372c7d2e.json"
+  },
+  {
+    "id": "cfe82efa-1784-4fa1-85cb-24c14f814cc6",
+    "type": "not_a_building",
+    "image": "ml/feedback/not_a_building/images/cfe82efa-1784-4fa1-85cb-24c14f814cc6.png",
+    "mask": "ml/feedback/not_a_building/masks/cfe82efa-1784-4fa1-85cb-24c14f814cc6.png",
+    "metadata": "ml/feedback/not_a_building/metadata/cfe82efa-1784-4fa1-85cb-24c14f814cc6.json"
+  },
+  {
+    "id": "d2e42a48-c78d-40d7-83f6-f5fc7fbbe1f7",
+    "type": "not_a_building",
+    "image": "ml/feedback/not_a_building/images/d2e42a48-c78d-40d7-83f6-f5fc7fbbe1f7.png",
+    "mask": "ml/feedback/not_a_building/masks/d2e42a48-c78d-40d7-83f6-f5fc7fbbe1f7.png",
+    "metadata": "ml/feedback/not_a_building/metadata/d2e42a48-c78d-40d7-83f6-f5fc7fbbe1f7.json"
+  }
+]

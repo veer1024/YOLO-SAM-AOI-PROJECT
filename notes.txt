@@ -1,0 +1,8 @@
+to start training:
+
+git clone https://github.com/facebookresearch/segment-anything.git
+
+
+toinstall: 
+
+pip3 install torch torchvision opencv-python numpy shapely rasterio

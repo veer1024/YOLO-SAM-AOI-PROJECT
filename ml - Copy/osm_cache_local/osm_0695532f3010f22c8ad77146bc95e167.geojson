@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "osm_0695532f3010f22c8ad77146bc95e167",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "element": "way", "id": 587475594, "aeroway": "terminal", "building": "yes", "name": "VVIP Terminal" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 73.0935043, 33.6124661 ], [ 73.0940772, 33.6127441 ], [ 73.0939058, 33.6129995 ], [ 73.0933442, 33.6127253 ], [ 73.0935043, 33.6124661 ] ] ] } }
+]
+}

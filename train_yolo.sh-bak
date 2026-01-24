@@ -1,0 +1,1 @@
+ yolo detect train model=yolo_to_train/best.pt data=ml/feedback_yolo/data.yaml epochs=80 imgsz=640 batch=4 lr0=0.001 patience=15 close_mosaic=10 freeze=10 device=0

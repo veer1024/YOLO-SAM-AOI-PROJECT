@@ -1,0 +1,34 @@
+{
+  "id": "33cca3d0-7ee5-4a95-ad2f-e9bcccfbec8b",
+  "type": "missing_building",
+  "timestamp": "2026-01-13T14:00:42.628736+00:00",
+  "image": "ml/feedback/missing_building/images/33cca3d0-7ee5-4a95-ad2f-e9bcccfbec8b.png",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          73.09975907206535,
+          33.61316179724748
+        ],
+        [
+          73.09959277510643,
+          33.61304787705285
+        ],
+        [
+          73.09976175427438,
+          33.61288704828645
+        ],
+        [
+          73.09992000460625,
+          33.61300543615752
+        ],
+        [
+          73.09975907206535,
+          33.61316179724748
+        ]
+      ]
+    ]
+  },
+  "mask": "ml/feedback/missing_building/masks/33cca3d0-7ee5-4a95-ad2f-e9bcccfbec8b.png"
+}

@@ -1,0 +1,10 @@
+flask
+rio-tiler
+pysolar
+numpy
+opencv-python
+shapely
+rasterio
+torch
+torchvision
+segment-anything

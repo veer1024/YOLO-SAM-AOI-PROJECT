@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "osm_460dc023538cfdf3ea5601e6b58a8c68",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "element": "way", "id": 587475577, "aeroway": "hangar", "building": "yes" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 73.0979071, 33.6106123 ], [ 73.0984245, 33.6101178 ], [ 73.097927, 33.6097615 ], [ 73.0974614, 33.6103019 ], [ 73.0979071, 33.6106123 ] ] ] } }
+]
+}

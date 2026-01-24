@@ -1,0 +1,10 @@
+{
+"type": "FeatureCollection",
+"name": "osm_1294bf37ff3490adab0d19b6a1701f6a",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "element": "way", "id": 23510680, "aeroway": "terminal", "building": "yes", "name": null }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 73.0998367, 33.6075923 ], [ 73.1004445, 33.6069803 ], [ 73.1004193, 33.6067002 ], [ 73.1007269, 33.6064028 ], [ 73.1016821, 33.6070705 ], [ 73.1005834, 33.6081642 ], [ 73.0998367, 33.6075923 ] ] ] } },
+{ "type": "Feature", "properties": { "element": "way", "id": 241957177, "aeroway": null, "building": "yes", "name": null }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 73.1020893, 33.6061165 ], [ 73.1018745, 33.6063272 ], [ 73.1025381, 33.6067964 ], [ 73.1027529, 33.6065857 ], [ 73.1020893, 33.6061165 ] ] ] } },
+{ "type": "Feature", "properties": { "element": "way", "id": 587475556, "aeroway": null, "building": "industrial", "name": "Airside Buildings" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 73.1018979, 33.607274 ], [ 73.1032939, 33.6082091 ], [ 73.1046973, 33.6091822 ], [ 73.1041815, 33.6097634 ], [ 73.1029525, 33.6087904 ], [ 73.1032407, 33.6084998 ], [ 73.103089, 33.6083797 ], [ 73.1031725, 33.6082976 ], [ 73.1018145, 33.6073625 ], [ 73.1018979, 33.607274 ] ] ] } }
+]
+}

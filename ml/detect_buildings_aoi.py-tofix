@@ -1,0 +1,892 @@
+# ml/detect_buildings_aoi.py
+
+import os
+import logging
+import sys
+import cv2
+import numpy as np
+import rasterio
+import geopandas as gpd
+import torch
+import osmnx as ox
+import math
+
+from shapely.geometry import Polygon
+from rasterio.warp import transform_bounds
+from datetime import datetime, timezone
+from astral.sun import elevation, azimuth
+from astral import LocationInfo
+from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
+
+from ml.roof_geometry import flat_roof
+from ml.glb_export import export_glb
+import hashlib
+import json
+import uuid
+from shapely.ops import transform as shp_transform
+from pyproj import Transformer
+
+TMP_DIR = "ml/tmp"
+os.makedirs(TMP_DIR, exist_ok=True)
+
+### OSM CAHCING CONFIG
+
+OSM_CACHE_DIR = "ml/osm_cache_local"
+os.makedirs(OSM_CACHE_DIR, exist_ok=True)
+
+# --------------------------------------------------
+# LOGGING
+# --------------------------------------------------
+#logging.basicConfig(level=logging.INFO)
+
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+formatter = logging.Formatter(
+    "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+)
+
+# ---- File handler ----
+file_handler = logging.FileHandler("detect_buildings_aoi.log", mode="a")
+file_handler.setFormatter(formatter)
+file_handler.setLevel(logging.INFO)
+
+# ---- STDOUT handler ----
+stdout_handler = logging.StreamHandler(sys.stdout)
+stdout_handler.setFormatter(formatter)
+stdout_handler.setLevel(logging.INFO)
+
+# Avoid duplicate logs
+if not logger.handlers:
+    logger.addHandler(file_handler)
+    logger.addHandler(stdout_handler)
+
+# --------------------------------------------------
+# TILING CONFIG
+# --------------------------------------------------
+TILE_SIZE_M = 256        # fewer tiles
+TILE_OVERLAP = 0.10     # enough continuity
+#MIN_TILING_AREA_M2 = 120 * 120  # below this → no tiling
+MIN_TILING_AREA_M2 = 250 * 250  # below this → no tiling
+
+
+# --------------------------------------------------
+# CONFIG
+# --------------------------------------------------
+BASE_TIF = "data/processed/merged_rgb_3857.tif"
+AOI_TIF = "ml/aoi.tif"
+
+OUT_DIR = "ml/output"
+OUT_GEOJSON = f"{OUT_DIR}/buildings.geojson"
+OUT_GLB = f"{OUT_DIR}/aoi_buildings.glb"
+
+DEFAULT_HEIGHT = 12.0
+MIN_AREA_PX = 600        # slightly higher for airports
+MAX_AOI_RATIO = 0.08     # reject giant flat regions
+
+#IMAGE_ACQ_TIME = "2023-08-01T06:48:46.620"
+IMAGE_ACQ_TIME = "2022-11-24T05:59:54.545+00:00"
+
+
+
+os.makedirs(OUT_DIR, exist_ok=True)
+
+# --------------------------------------------------
+# DEVICE
+# --------------------------------------------------
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+logging.info("Using device: %s", device)
+
+# --------------------------------------------------
+# LOAD SAM
+# --------------------------------------------------
+sam = sam_model_registry["vit_b"](checkpoint="ml/checkpoints/sam_vit_b.pth")
+sam.to(device=device, dtype=torch.float32)
+sam.eval()
+
+decoder_ckpt = "ml/sam_training/checkpoints/sam_decoder_finetuned.pth.epoch22.pth"
+sam.mask_decoder.load_state_dict(torch.load(decoder_ckpt, map_location=device))
+logging.info("Fine-tuned SAM decoder loaded")
+
+
+
+mask_generator = SamAutomaticMaskGenerator(
+    sam,
+    points_per_side=8,            # ↓ 4× faster
+    pred_iou_thresh=0.90,
+    stability_score_thresh=0.92,
+    crop_n_layers=0,              # 🔥 MASSIVE speed win
+    min_mask_region_area=800
+)
+
+
+# --------------------------------------------------
+# OSM SETTINGS
+# --------------------------------------------------
+ox.settings.use_cache = True
+ox.settings.cache_folder = "osm_cache"
+ox.settings.log_console = False
+
+# --------------------------------------------------
+# HELPERS
+# --------------------------------------------------
+
+def snap_geom_to_raster_grid(geom, raster_transform):
+    px = raster_transform.a
+    ox = raster_transform.c
+    oy = raster_transform.f
+
+    def _snap(x, y, z=None):
+        xs = ox + round((x - ox) / px) * px
+        ys = oy + round((y - oy) / px) * px
+        return xs, ys
+
+    return shp_transform(_snap, geom)
+
+def osm_cache_key(bounds):
+    """
+    bounds = (west, south, east, north)
+    """
+    s = json.dumps([round(b, 6) for b in bounds])
+    return hashlib.md5(s.encode()).hexdigest()
+
+def save_osm_cache(gdf, bounds):
+    key = osm_cache_key(bounds)
+    path = os.path.join(OSM_CACHE_DIR, f"osm_{key}.geojson")
+    gdf.to_file(path, driver="GeoJSON")
+    logging.info("OSM cache saved: %s", path)
+
+def load_osm_cache(bounds):
+    key = osm_cache_key(bounds)
+    path = os.path.join(OSM_CACHE_DIR, f"osm_{key}.geojson")
+
+    if os.path.exists(path):
+        try:
+            gdf = gpd.read_file(path)
+            if not gdf.empty:
+                logging.info("Loaded OSM from cache")
+                return gdf
+        except Exception as e:
+            logging.warning("Failed to read OSM cache: %s", e)
+
+    return None
+
+
+
+def osm_height_from_tags(osm_row):
+    """
+    Extract height from OSM row safely.
+    """
+    if "height" in osm_row and osm_row["height"] is not None:
+        try:
+            return float(str(osm_row["height"]).replace("m", ""))
+        except:
+            pass
+
+    if "building:levels" in osm_row and osm_row["building:levels"] is not None:
+        try:
+            return float(osm_row["building:levels"]) * 3.0
+        except:
+            pass
+
+    return None
+
+
+
+
+def estimate_height_from_shadow(poly, img_rgb,transform, raster_crs):
+    """
+    Estimate building height from shadow length using solar geometry.
+    poly        : building polygon in raster CRS
+    img_rgb     : RGB numpy image (H,W,3)
+    raster_crs  : CRS of raster (used only for reprojection safety)
+
+    Returns height in meters or None.
+    """
+
+    #logging.info("ESTIMATE HEIGHT FROM SHADOW CALLED")
+    logging.info("Shadow height estimation invoked")
+
+    try:
+        # --------------------------------------------------
+        # 1️⃣ Centroid → lat/lon
+        # --------------------------------------------------
+        gdf = gpd.GeoSeries([poly], crs=raster_crs).to_crs(epsg=4326)
+        lon, lat = gdf.iloc[0].centroid.xy[0][0], gdf.iloc[0].centroid.xy[1][0]
+
+        ts = datetime.fromisoformat(IMAGE_ACQ_TIME)
+        loc = LocationInfo(latitude=lat, longitude=lon)
+
+        print("Solar elevation:", elevation(loc.observer, ts))
+
+        sun_elev = elevation(loc.observer, ts)
+        sun_az = azimuth(loc.observer, ts)
+
+        # Too low sun = unreliable
+        if sun_elev < 12:
+            return None
+
+        # Shadow direction (opposite sun)
+        theta = math.radians((sun_az + 180) % 360)
+        #dx, dy = math.cos(theta), math.sin(theta)
+        dx = math.sin(theta)
+        dy = -math.cos(theta)
+
+
+        # --------------------------------------------------
+        # 2️⃣ Rasterize building mask
+        # --------------------------------------------------
+        h, w = img_rgb.shape[:2]
+
+        from rasterio.features import rasterize
+        #from rasterio.transform import from_bounds
+
+        minx, miny, maxx, maxy = poly.bounds
+        #transform = from_bounds(minx, miny, maxx, maxy, w, h)
+
+        building_mask = rasterize(
+            [(poly, 1)],
+            out_shape=(h, w),
+            transform=transform,
+            fill=0,
+            dtype=np.uint8
+        )
+
+        if building_mask.sum() < 50:
+            return None
+
+        # --------------------------------------------------
+        # 3️⃣ Extract building edge pixels
+        # --------------------------------------------------
+        edges = cv2.Canny(building_mask * 255, 50, 150)
+        ys, xs = np.where(edges > 0)
+
+        if len(xs) < 20:
+            return None
+
+        # --------------------------------------------------
+        # 4️⃣ Shadow probing along sun direction
+        # --------------------------------------------------
+        gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+
+        pixel_size_m = abs(transform.a)
+
+        max_shadow_px = 0
+        shadow_pixels = []
+
+        for x0, y0 in zip(xs, ys):
+            for step in range(1, 150):  # ~75m max
+                x = int(x0 + dx * step)
+                y = int(y0 + dy * step)
+
+                if x < 0 or y < 0 or x >= w or y >= h:
+                    break
+
+                # Stop when shadow ends (bright ground)
+                if gray[y, x] > np.percentile(gray, 60):
+                    break
+
+                #max_shadow_px = max(max_shadow_px, step)
+                max_shadow_px = max(max_shadow_px, step)
+
+                # store shadow pixel world coords
+                wx, wy = rasterio.transform.xy(transform, y, x, offset="center")
+                shadow_pixels.append((wx, wy))
+
+        # if max_shadow_px < 6:
+        #     return None
+
+
+        if len(shadow_pixels) < 10:
+            return None
+
+        shadow_poly = Polygon(shadow_pixels).convex_hull
+        if not shadow_poly.is_valid or shadow_poly.area < 1.0:
+            return None
+
+        if max_shadow_px < 6:
+            return {
+                "height": None,
+                "shadow_length_m": max_shadow_px * pixel_size_m,
+                "sun_azimuth": sun_az,
+                "shadow_polygon": shadow_poly
+            }
+
+        # --------------------------------------------------
+        # 5️⃣ Height calculation
+        # --------------------------------------------------
+        shadow_len_m = max_shadow_px * pixel_size_m
+        height = shadow_len_m * math.tan(math.radians(sun_elev))
+
+
+        logging.info(
+            f"Shadow height={height:.2f}m, len={shadow_len_m:.2f}m, az={sun_az:.1f}"
+        )
+
+        if not np.isfinite(height):
+            return None
+
+        return {
+            "height": float(np.clip(height, 3.0, 80.0)),
+            "shadow_length_m": shadow_len_m,
+            "sun_azimuth": sun_az,
+            "shadow_polygon": shadow_poly
+        }
+
+
+
+    except Exception as e:
+        logging.debug("Shadow height estimation failed: %s", e)
+        return None
+
+
+
+
+
+def find_matching_osm_height(poly, osm_gdf, raster_crs):
+    """
+    Returns OSM height if overlap is strong.
+    """
+    if osm_gdf is None or osm_gdf.empty:
+        return None
+
+    for _, row in osm_gdf.iterrows():
+        geom = row.geometry
+        if geom.geom_type == "MultiPolygon":
+            geom = max(geom.geoms, key=lambda g: g.area)
+
+        geom = (
+            gpd.GeoSeries([geom], crs="EPSG:4326")
+            .to_crs(raster_crs)
+            .iloc[0]
+        )
+
+        inter = poly.intersection(geom).area
+        union = poly.union(geom).area
+
+        if union > 0 and inter / union > 0.5:
+            return osm_height_from_tags(row)
+
+    return None
+
+
+def compute_confidence(mask, tex_var, area_px, aoi_area_px):
+    """
+    Returns confidence in range [0,1]
+    """
+
+    iou = mask.get("predicted_iou", 0.0)
+    stability = mask.get("stability_score", 0.0)
+    fill = float(mask["segmentation"].mean())
+
+    # normalize texture variance (empirical)
+    tex_score = np.clip((tex_var - 4.0) / 6.0, 0.0, 1.0)
+
+    # penalize huge blobs
+    area_ratio = area_px / aoi_area_px
+    area_score = 1.0 - np.clip(area_ratio / MAX_AOI_RATIO, 0.0, 1.0)
+
+    # weighted sum
+    confidence = (
+        0.45 * iou +
+        0.20 * stability +
+        0.15 * fill +
+        0.10 * tex_score +
+        0.10 * area_score
+    )
+
+    return float(np.clip(confidence, 0.0, 1.0))
+
+
+def split_bounds_into_tiles(bounds, tile_size_m, overlap):
+    """
+    bounds: (west, south, east, north) in EPSG:4326
+    returns list of bounds in EPSG:4326
+    """
+    west, south, east, north = bounds
+
+    # Project AOI to meters (EPSG:3857)
+    aoi_gdf = gpd.GeoDataFrame(
+        geometry=[Polygon([
+            (west, south),
+            (east, south),
+            (east, north),
+            (west, north)
+        ])],
+        crs="EPSG:4326"
+    ).to_crs(epsg=3857)
+
+
+
+    minx, miny, maxx, maxy = aoi_gdf.total_bounds
+
+    step = tile_size_m * (1 - overlap)
+    tiles = []
+
+    x = minx
+    while x < maxx:
+        y = miny
+        while y < maxy:
+            tile = Polygon([
+                (x, y),
+                (x + tile_size_m, y),
+                (x + tile_size_m, y + tile_size_m),
+                (x, y + tile_size_m)
+            ])
+            tiles.append(tile)
+            y += step
+        x += step
+
+    tiles_gdf = gpd.GeoDataFrame(geometry=tiles, crs="EPSG:3857").to_crs(epsg=4326)
+
+    return [tuple(t.bounds) for t in tiles_gdf.geometry]
+
+
+
+def run_sam_on_image(img_rgb, transform):
+    AOI_AREA = img_rgb.shape[0] * img_rgb.shape[1]
+    buildings = []
+
+    masks = mask_generator.generate(img_rgb)
+
+    for m in masks:
+        if m["area"] < MIN_AREA_PX:
+            continue
+        if m["area"] > MAX_AOI_RATIO * AOI_AREA:
+            continue
+        if m.get("predicted_iou", 0) < 0.85:
+            continue
+        if m["segmentation"].mean() < 0.015:
+            continue
+
+        poly = mask_to_polygon(m, transform)
+        if poly is None:
+            continue
+
+        if not is_airport_building(poly):
+            continue
+
+        tex_var = texture_variance(img_rgb, poly, transform)
+
+        confidence = compute_confidence(
+            m, tex_var, m["area"], AOI_AREA
+        )
+
+        buildings.append((poly, DEFAULT_HEIGHT, confidence))
+
+    return buildings
+
+
+def merge_buildings(buildings, iou_thresh=0.5):
+    merged = []
+
+    for poly, h, conf in buildings:
+        keep = True
+
+        for i, (mp, mh, mconf) in enumerate(merged):
+            inter = poly.intersection(mp).area
+            union = poly.union(mp).area
+
+            if union > 0 and inter / union > iou_thresh:
+                # keep the one with higher confidence
+                if conf > mconf:
+                    merged[i] = (poly, h, conf)
+                keep = False
+                break
+
+        if keep:
+            merged.append((poly, h, conf))
+
+    return merged
+
+
+def snap_polygon_to_pixel(poly, transform):
+    snapped = []
+    for x, y in poly.exterior.coords:
+        row, col = rasterio.transform.rowcol(transform, x, y)
+        sx, sy = rasterio.transform.xy(transform, row, col, offset="center")
+        snapped.append((sx, sy))
+    return Polygon(snapped)
+
+
+
+def extract_aoi(bounds,out_tif):
+    with rasterio.open(BASE_TIF) as src:
+        bounds_3857 = transform_bounds("EPSG:4326", src.crs, *bounds)
+        #window = rasterio.windows.from_bounds(*bounds_3857, transform=src.transform)
+        window = rasterio.windows.from_bounds(
+                    *bounds_3857,
+                    transform=src.transform
+                ).round_offsets().round_lengths()
+
+        data = src.read([1, 2, 3], window=window)
+        transform = src.window_transform(window)
+
+        meta = src.meta.copy()
+        meta.update({"height": data.shape[1], "width": data.shape[2]})
+
+        with rasterio.open(out_tif, "w", **meta) as dst:
+            dst.write(data)
+
+    return transform, src.crs
+
+def texture_variance(img_rgb, poly, transform):
+    mask = np.zeros(img_rgb.shape[:2], dtype=np.uint8)
+
+    pts = [
+        rasterio.transform.rowcol(transform, x, y)
+        for x, y in poly.exterior.coords
+    ]
+
+    cv2.fillPoly(mask, [np.array(pts)], 255)
+
+    gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+    values = gray[mask == 255]
+
+    if len(values) < 50:
+        return 0
+
+    return np.std(values)
+
+
+def overlaps_existing(poly, existing, thresh=0.5):
+    for p, _ in existing:
+        if poly.intersection(p).area / poly.area > thresh:
+            return True
+    return False
+
+
+
+
+def get_osm_buildings(bounds):
+    """
+    Fetch OSM buildings with local cache fallback.
+    """
+    # 1️⃣ Try local cache first
+    #return None
+    cached = load_osm_cache(bounds)
+    if cached is not None:
+        return cached
+
+    west, south, east, north = bounds
+
+    try:
+        gdf = ox.features_from_bbox(
+            bbox=(west, south, east, north),
+            tags={"building": True}
+        )
+    except TypeError:
+        gdf = ox.features_from_bbox(
+            north, south, east, west,
+            tags={"building": True}
+        )
+    except Exception as e:
+        logging.warning("OSM API failed: %s", e)
+        return None
+
+    if gdf is None or gdf.empty:
+        logging.warning("OSM returned empty result")
+        return None
+
+    gdf = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
+
+    # 2️⃣ Save to cache
+    save_osm_cache(gdf, bounds)
+
+    return gdf
+
+
+
+
+def mask_to_polygon(mask, transform):
+    seg = (mask["segmentation"] > 0).astype(np.uint8)
+    cnts, _ = cv2.findContours(seg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts:
+        return None
+
+    cnt = max(cnts, key=cv2.contourArea)
+    if cv2.contourArea(cnt) < MIN_AREA_PX:
+        return None
+
+    coords = []
+    for pt in cnt.squeeze():
+        row, col = pt[1], pt[0]
+        x, y = rasterio.transform.xy(transform, row, col, offset="center")
+        coords.append((x, y))
+
+    poly = Polygon(coords)
+    return poly if poly.is_valid else None
+
+
+
+def is_airport_building(poly):
+    hull = poly.convex_hull
+    solidity = poly.area / max(hull.area, 1e-6)
+
+    minx, miny, maxx, maxy = poly.bounds
+    w = maxx - minx
+    h = maxy - miny
+    aspect = max(w, h) / max(1e-6, min(w, h))
+
+    # 🛑 Runway / apron rejection
+    if solidity < 0.25:
+        logging.info(f"Rejected in solidity check: solidity={solidity:.2f}, aspect={aspect:.2f}")
+        return False
+    if aspect > 20.0:
+        logging.info(f"Rejected in aspect check: solidity={solidity:.2f}, aspect={aspect:.2f}")
+        return False
+
+    return True
+
+
+def rebase_geom_from_tile(tile_geom, tile_transform, base_transform):
+    def _rebase(x, y, z=None):
+        # tile pixel
+        col, row = rasterio.transform.rowcol(tile_transform, x, y)
+
+        # world coord from BASE raster
+        gx, gy = rasterio.transform.xy(
+            base_transform, row, col, offset="center"
+        )
+        return gx, gy
+
+    return shp_transform(_rebase, tile_geom)
+
+
+# Convert BASE poly → AOI space
+def project_poly_to_aoi(poly, base_transform, aoi_transform):
+    def _proj(x, y, z=None):
+        col, row = rasterio.transform.rowcol(base_transform, x, y)
+        ax, ay = rasterio.transform.xy(aoi_transform, row, col, offset="center")
+        return ax, ay
+    return shp_transform(_proj, poly)
+
+
+def base_to_aoi_local(poly, base_transform, aoi_transform):
+    def _local(x, y, z=None):
+        col, row = rasterio.transform.rowcol(base_transform, x, y)
+        lx, ly = rasterio.transform.xy(aoi_transform, row, col, offset="center")
+        return lx, ly
+    return shp_transform(_local, poly)
+
+def to_glb_local(poly, anchor_x, anchor_y):
+    return shp_transform(
+        lambda x, y, z=None: (x - anchor_x, y - anchor_y),
+        poly
+    )
+
+
+def to_anchor_space(poly, anchor_x, anchor_y):
+    return shp_transform(
+        lambda x, y, z=None: (x - anchor_x, y - anchor_y),
+        poly
+    )
+# --------------------------------------------------
+# MAIN PIPELINE
+# --------------------------------------------------
+
+def detect_buildings(bounds):
+    
+
+    with rasterio.open(BASE_TIF) as base:
+        BASE_TRANSFORM = base.transform
+        BASE_CRS = base.crs
+
+
+    aoi_path = f"ml/tmp/aoi_{uuid.uuid4().hex}.tif"
+    transform, raster_crs = extract_aoi(bounds, aoi_path)
+    logging.info(f"AOI transform origin: transform.c =  {transform.c} , transform.f = {transform.f} ")
+    # anchor_x = transform.c
+    # anchor_y = transform.f
+
+
+
+    with rasterio.open(aoi_path) as src:
+        img = src.read().transpose(1, 2, 0)
+
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    h, w = img_rgb.shape[:2]
+    pixel_area_m2 = abs(transform.a * transform.e)
+    aoi_area_m2 = h * w * pixel_area_m2
+
+    osm = get_osm_buildings(bounds)
+    tiles = []
+    all_buildings = []
+
+    if aoi_area_m2 > MIN_TILING_AREA_M2:
+        tiles = split_bounds_into_tiles(bounds, TILE_SIZE_M, TILE_OVERLAP)
+        for tb in tiles:
+            t_path = f"ml/tmp/aoi_tile_{uuid.uuid4().hex}.tif"
+            t_transform, _ = extract_aoi(tb, t_path)
+
+            with rasterio.open(t_path) as src:
+                tile_img = src.read().transpose(1, 2, 0)
+
+            tile_rgb = cv2.cvtColor(tile_img, cv2.COLOR_BGR2RGB)
+            #all_buildings.extend(run_sam_on_image(tile_rgb, t_transform))
+            tile_buildings = run_sam_on_image(tile_rgb, t_transform)
+
+            for poly, h, conf in tile_buildings:
+                poly = rebase_geom_from_tile(poly, t_transform, BASE_TRANSFORM)
+                all_buildings.append((poly, h, conf))
+
+    else:
+        all_buildings = run_sam_on_image(img_rgb, transform)
+
+    sam_buildings = merge_buildings(all_buildings)
+    buildings = list(sam_buildings)
+
+    if osm is not None:
+        for geom in osm.geometry:
+            if geom.geom_type == "MultiPolygon":
+                geom = max(geom.geoms, key=lambda g: g.area)
+
+            poly = (
+                gpd.GeoSeries([geom], crs="EPSG:4326")
+                .to_crs(raster_crs)
+                .iloc[0]
+            )
+
+            if not is_airport_building(poly):
+                continue
+
+            buildings.append((poly, DEFAULT_HEIGHT, 0.95))
+
+    if not buildings:
+        logging.warning("No buildings detected")
+        return None
+
+    #polys, heights, confidences = zip(*buildings)
+    final_buildings = []
+
+    for poly, _, conf in buildings:
+        height = find_matching_osm_height(poly, osm, raster_crs)
+
+        shadow_info = None
+        if height is None and conf >= 0.45:
+            poly_aoi = project_poly_to_aoi(poly, BASE_TRANSFORM, transform)
+            shadow_info = estimate_height_from_shadow(
+                poly_aoi, img_rgb, transform, raster_crs
+            )
+            if shadow_info:
+                height = shadow_info["height"]
+
+        if height is None:
+            height = DEFAULT_HEIGHT
+            conf = min(conf, 0.5)
+
+        logging.info(f"height: {height}, conf: {conf}")
+
+        final_buildings.append((poly, height, conf, shadow_info))
+
+
+    xs = [poly.centroid.x for poly, _, _, _ in final_buildings]
+    ys = [poly.centroid.y for poly, _, _, _ in final_buildings]
+
+    anchor_x = sum(xs) / len(xs)
+    anchor_y = sum(ys) / len(ys)
+
+    logging.info(
+        f"GLB anchor (BASE CRS): x={anchor_x:.3f}, y={anchor_y:.3f}"
+    )
+
+
+    polys = [b[0] for b in final_buildings]
+    heights = [b[1] for b in final_buildings]
+    confidences = [b[2] for b in final_buildings]
+    shadows = [b[3] for b in final_buildings]  # may be None
+
+    dx = polys[0].centroid.x - BASE_TRANSFORM.c
+    dy = polys[0].centroid.y - BASE_TRANSFORM.f
+    logging.info(f"Centroid offset from base origin: dx={dx:.3f}, dy={dy:.3f}")
+
+
+
+
+    features = []
+    b_id = 1
+    s_id = 1
+
+    for poly, height, conf, shadow in final_buildings:
+        bid = f"B{b_id}"
+        b_id += 1
+
+        # ✅ BUILDING (absolute geometry)
+        features.append({
+            "type": "Feature",
+            "geometry": poly,
+            "properties": {
+                "feature_type": "building",
+                "id": bid,
+                "height": height,
+                "confidence": conf
+            }
+        })
+
+        # ✅ SHADOW (absolute geometry)
+        if shadow:
+            sid = f"S{s_id}"
+            s_id += 1
+
+            features.append({
+                "type": "Feature",
+                "geometry": shadow["shadow_polygon"],
+                "properties": {
+                    "feature_type": "shadow",
+                    "id": sid,
+                    "building_id": bid,
+                    "shadow_len": shadow["shadow_length_m"],
+                    "sun_azimuth": shadow["sun_azimuth"]
+                }
+            })
+
+
+    gdf = gpd.GeoDataFrame.from_features(
+        features, crs=raster_crs
+    ).to_crs(epsg=4326)
+
+    
+    #gdf["geometry"] = gdf.geometry.translate(xoff=0.0, yoff=0.0)
+    gdf.to_file(OUT_GEOJSON, driver="GeoJSON")
+
+
+    export_glb(
+        [
+            flat_roof(
+                to_glb_local(poly, anchor_x, anchor_y),
+                height
+            )
+            for poly, height, _, _ in final_buildings
+        ],
+        OUT_GLB
+    )
+
+    test_poly, test_height, _, _ = final_buildings[0]
+
+    mesh = flat_roof(
+        to_glb_local(test_poly, anchor_x, anchor_y),
+        test_height
+    )
+
+    print("GLB bounds:", mesh.bounds)
+
+
+
+
+    # BASE CRS → WGS84
+    to_wgs84 = Transformer.from_crs(BASE_CRS, "EPSG:4326", always_xy=True)
+
+    lon, lat = to_wgs84.transform(anchor_x, anchor_y)
+
+    return {
+        "geojson": "output/buildings.geojson",
+        "glb": "output/aoi_buildings.glb",
+        "anchor": {
+            "lon": lon,
+            "lat": lat
+        },
+        "tiles": tiles if aoi_area_m2 > MIN_TILING_AREA_M2 else []
+    }
+

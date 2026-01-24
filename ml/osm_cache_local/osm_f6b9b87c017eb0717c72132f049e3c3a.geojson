@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "osm_f6b9b87c017eb0717c72132f049e3c3a",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "element": "way", "id": 587475574, "aeroway": "hangar", "building": "yes", "name": "PIA Hangar" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 73.0991292, 33.6093941 ], [ 73.0996527, 33.6089139 ], [ 73.0991957, 33.6085375 ], [ 73.0986668, 33.6090477 ], [ 73.0991292, 33.6093941 ] ] ] } }
+]
+}

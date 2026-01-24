@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "osm_c251de5b1208186ad19fc395c49fe2bb",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "element": "way", "id": 1164157448, "building": "yes", "sport": "field_hockey" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 73.075119, 33.6289272 ], [ 73.075459, 33.6287552 ], [ 73.0750878, 33.6282464 ], [ 73.0747478, 33.6284184 ], [ 73.075119, 33.6289272 ] ] ] } }
+]
+}

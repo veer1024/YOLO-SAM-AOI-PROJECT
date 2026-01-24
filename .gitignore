@@ -1,0 +1,38 @@
+*.png
+*.tif
+*.tiff
+*.geotiff
+# Python
+venv/
+.env
+__pycache__/
+*.pyc
+*.pyo
+
+# ML models
+ml/checkpoints/
+*.pth
+
+# Generated outputs
+ml/output/
+ml/aoi.tif
+
+# OSM / cache
+osm_cache/
+.cache/
+
+# Logs
+*.log
+nohup.out
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Secrets
+*.pem
+*.crt
+*.key
+*.zip

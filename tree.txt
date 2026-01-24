@@ -1,0 +1,1542 @@
+.
+├── app.log
+├── app.py
+├── cache
+│   ├── 2eaa368faa16485548e940c7884203542072ae06.json
+│   ├── 735ea763f1c67e682e270b0ce814b91c89157f7e.json
+│   ├── 84108440347b6dd1764ac516da5d81fcf2bdc963.json
+│   └── b1d8c57f9e05b771f0b1590839f208f47dddd27d.json
+├── data
+│   ├── ml
+│   │   ├── image.png
+│   │   └── image.png.aux.xml
+│   ├── ms_buildings_pakistan.geojson
+│   ├── processed
+│   │   └── merged_rgb_3857.tif
+│   └── raw
+│       ├── IMG_PHR1A_PMS_202211240559545_ORT_6756319101_R1C1.TIF
+│       ├── IMG_PHR1A_PMS_202211240559545_ORT_6756319101_R1C2.TIF
+│       ├── IMG_PHR1A_PMS_202211240559545_ORT_6756319101_R2C1.TIF
+│       └── IMG_PHR1A_PMS_202211240559545_ORT_6756319101_R2C2.TIF
+├── dataset_count.py
+├── debug_yolo_boxes.png
+├── detect_buildings_aoi.log
+├── log.txt
+├── map-box-token.txt
+├── merged.tif
+├── merged_3857.tif
+├── merged_rgb_3857.tif
+├── ml
+│   ├── __pycache__
+│   │   ├── detect_buildings_aoi.cpython-311.pyc
+│   │   ├── detect_buildings_aoi.cpython-312.pyc
+│   │   ├── glb_export.cpython-311.pyc
+│   │   ├── glb_export.cpython-312.pyc
+│   │   ├── roof_geometry.cpython-311.pyc
+│   │   ├── roof_geometry.cpython-312.pyc
+│   │   ├── shadow_height.cpython-311.pyc
+│   │   ├── solar.cpython-311.pyc
+│   │   └── yolo_detector.cpython-312.pyc
+│   ├── aoi.tif
+│   ├── attach_height.py
+│   ├── build_yolo_from_feedback.py
+│   ├── buildings.geojson
+│   ├── buildings_ms.py
+│   ├── buildings_raw.geojson
+│   ├── checkpoints
+│   │   ├── sam_decoder_finetuned.pth
+│   │   ├── sam_decoder_finetuned.pth.epoch5.pth
+│   │   ├── sam_decoder_finetuned.pth.epoch8.pth
+│   │   ├── sam_vit_b.pth
+│   │   ├── sam_vit_h_4b8939.pth
+│   │   └── yolo11n.pt
+│   ├── clean_feedback_dataset.py
+│   ├── crop_aoi.py
+│   ├── debug
+│   │   ├── 02db14a4900b448c8c4aec158926de16_check.png
+│   │   ├── 049f8b56853a4114bd710f13a5fb8fd0_check.png
+│   │   ├── 05ea7e4fdd88462f940fc221ac616298_check.png
+│   │   ├── 074db12310124183bb2ef5bdaf6c82b6_check.png
+│   │   ├── 0a2a244e96de484cb075bd05febc1521_check.png
+│   │   ├── 0a703f4d405e4dcb9df3f8be463499b8_check.png
+│   │   ├── 0b1ae86d10c142c399cab2d886522e4e_check.png
+│   │   ├── 0bba4afc22f14b2a8d97ac00aeac3c06_check.png
+│   │   ├── 0ce4c2aa105044028189df89232493d7_check.png
+│   │   ├── 0d6e1592223942339278ab0f26546ba8_check.png
+│   │   ├── 0eac46388afb491581078a3ae3088565_check.png
+│   │   ├── 10110f464b8f402c91c0bf34ddc47e84_check.png
+│   │   ├── 114d1492bd3d441b93292b5b71085f2d_check.png
+│   │   ├── 1360827588a24fe791528177bdf9c651_check.png
+│   │   ├── 1457094186fc46748a433a55a490a5e2_check.png
+│   │   ├── 1a6623342d044cdf9f80d5ede11aa37b_check.png
+│   │   ├── 1a9c0d4f4de54f7c929cd77f6fe0df06_check.png
+│   │   ├── 1bcafbff20e840b1bfb665f54aa3b571_check.png
+│   │   ├── 1e2c2e1fe19f4f50947f1b9dedfbeedf_check.png
+│   │   ├── 1e3f27cb17084309bf99c674c0984621_check.png
+│   │   ├── 23e21667c52c4318a78718af757b006e_check.png
+│   │   ├── 26a221265c954b91bd920c562cc6d899_check.png
+│   │   ├── 27c3cc109495478798615bbf9292ffea_check.png
+│   │   ├── 28f53d0e659040afb300a83465f668ac_check.png
+│   │   ├── 2ed707344e1445998aa6d6941976ee27_check.png
+│   │   ├── 3057b795047f44f4a995dbf05c711011_check.png
+│   │   ├── 3374d83b192848b4ac8c0117dae4e29e_check.png
+│   │   ├── 39820e2b1ce8421cb4bd9f8d31b252d4_check.png
+│   │   ├── 39fa1bb2d85946c4b7d410c203229516_check.png
+│   │   ├── 47915625a28a4900a3d746f64fbb412c_check.png
+│   │   ├── 48621c8b85c24adbb60251f9246a248c_check.png
+│   │   ├── 4f79cce69cbe45e19df44c8082eaaf19_check.png
+│   │   ├── 5305f1f092414167876fc013d706913d_check.png
+│   │   ├── 53202e4e20f544f3bbe4fa642d774dcf_check.png
+│   │   ├── 5631aa2b36214934b55034c77d82275d_check.png
+│   │   ├── 5a721bea134b4363835908ce90b5f8f3_check.png
+│   │   ├── 5eab5921d7444e6db4911741c71229ed_check.png
+│   │   ├── 6486581cf045455c8b5bbc3a990ef926_check.png
+│   │   ├── 684cb31846de4854902fd827f8e481d6_check.png
+│   │   ├── 6964b854a16243bfb72cb37db0b16711_check.png
+│   │   ├── 696e8773257643479a75516e09cf9d8d_check.png
+│   │   ├── 6af570d279e24320979d7991dc68de52_check.png
+│   │   ├── 6cbdc6e24c2c4a79859bc3854a91b984_check.png
+│   │   ├── 778340cd3afc44878ab30729933e1dad_check.png
+│   │   ├── 7888e0fca21b432384db3fe9f72f987a_check.png
+│   │   ├── 7dedf8e589ce46e5a4d6611b5b5377d1_check.png
+│   │   ├── 7e1c103ad71e4fbb909351050ab3d33f_check.png
+│   │   ├── 7fc4a74dc1ac46da883737a7f2468bb5_check.png
+│   │   ├── 84f07f1560a147bdaf98a46896f2cd97_check.png
+│   │   ├── 8559dad78de84a2c974d766f2f1c44e2_check.png
+│   │   ├── 8c43abe59e304d5581efb482bd5f6925_check.png
+│   │   ├── 8c87c1c92d194c24b37becd0ab7140a7_check.png
+│   │   ├── 8d4c2c536f434b6db11b844e0f07a75a_check.png
+│   │   ├── 988586d63a1048c296bf87dde28b9ba1_check.png
+│   │   ├── 98fdcf25d6ad4e9f9820e1b58c3577dd_check.png
+│   │   ├── 9c01888a24ca4f6782037d12ce8b992c_check.png
+│   │   ├── 9f341ef6ba834f2abddf3137231f0761_check.png
+│   │   ├── 9f55254a0e5846a092d3c84daa20d442_check.png
+│   │   ├── a247a715b36f4ef9bffca33108c043f1_check.png
+│   │   ├── a4e03f78f21c4cc0aef4e22392a148b5_check.png
+│   │   ├── a72c8310758746ecae6b881b981307b1_check.png
+│   │   ├── aa301b67cb1f4946bfa7451c7401f075_check.png
+│   │   ├── ae62a19876e54dbf9232359dc9aaa393_check.png
+│   │   ├── b397cb98281e45cbbeb4794bb1e8df62_check.png
+│   │   ├── b6b06d3c0021495597557731f20a3f1d_check.png
+│   │   ├── ba760dcc82ab4cff95d76d8656a550a4_check.png
+│   │   ├── bde3246e994248efbe75aea25b8ee1d9_check.png
+│   │   ├── c500a386123547b1a6c6ef6510ff0a99_check.png
+│   │   ├── c5619b355aa24b5c9d8e2b35a4ddd6c7_check.png
+│   │   ├── c9a3e366d9e143ad9f2d33201688092c_check.png
+│   │   ├── cdd74ce5823146d7b4c5d102ec2d0b4c_check.png
+│   │   ├── d035a6c65d3744d4ae5d92c7a4efa066_check.png
+│   │   ├── d0c3a6e163c94f8aa71680bc82def4e0_check.png
+│   │   ├── d27c3901a0a14660aa29263981f0640f_check.png
+│   │   ├── d5cb6c7faad243db995f3d3c33a9790f_check.png
+│   │   ├── db559e13627846a9ab3cb19f590bf6e8_check.png
+│   │   ├── db9326c154684dfe8000386c4547c3a0_check.png
+│   │   ├── dd8e305554f04e6d9b0555ce7f30e61d_check.png
+│   │   ├── df276a10ede642b39f4b99d7603ddd1f_check.png
+│   │   ├── e085bf8c290546ab93a892e09e6b99d1_check.png
+│   │   ├── e371f19412e04bc499dfd5dd5b7ec6ab_check.png
+│   │   ├── e6c92ad640dc4a4f8536ddf661e920cf_check.png
+│   │   ├── e6e375bbcace46c2b52c6f779da7a0e3_check.png
+│   │   ├── f08dad37ea3244d99baaf14503e04938_check.png
+│   │   ├── f27552f6ef394a589d87d744a3a4d30b_check.png
+│   │   ├── f95c3c4c9f194733b2a6c9969f7e12c0_check.png
+│   │   ├── fd8a0acf7e76489f9cbb96f56ba0e171_check.png
+│   │   ├── fec61214c1ae42dfa2b1e5ee3cc90fbb_check.png
+│   │   ├── sam_fail_04af9cfa3ee5488eba4166c4623658f0.png
+│   │   ├── sam_fail_089867fa2c70406195ffdb3c1ae9dc40.png
+│   │   ├── sam_fail_0a8167608b5144a2916a067b2e4dadd9.png
+│   │   ├── sam_fail_10a75b0fff2b4fbb98c443164322927c.png
+│   │   ├── sam_fail_12f898f8181e44bd804292ad5a71d2fa.png
+│   │   ├── sam_fail_15c917a15b2b439380bdcb2ffe8cd42b.png
+│   │   ├── sam_fail_1b347f1032854de5b495c4205557c89c.png
+│   │   ├── sam_fail_1bdab9c5fec544729a81bee693d0fcba.png
+│   │   ├── sam_fail_2168a32371e54bd3a2db88b5717526e0.png
+│   │   ├── sam_fail_24e4be63ad184f2db652edf9e34d3e9e.png
+│   │   ├── sam_fail_254f9b784b4b46fe87241bbe4a9d0938.png
+│   │   ├── sam_fail_27926b209e814fec9a8a4ad318fd973a.png
+│   │   ├── sam_fail_294b75ca69af45789dddfb81129a4386.png
+│   │   ├── sam_fail_2964d7a010354123abae8b0e38d29896.png
+│   │   ├── sam_fail_3804df3464664240a2f17383995a7855.png
+│   │   ├── sam_fail_3c206daec8ae42f09a977ca4c2f67665.png
+│   │   ├── sam_fail_3c3448f597944987968af35f289dbcb6.png
+│   │   ├── sam_fail_4b2927157bec4d3694fabe68625b44bc.png
+│   │   ├── sam_fail_4eccd0198eda432db207975f194009e1.png
+│   │   ├── sam_fail_53c6375bc19b4159aed9d3d99de6bb03.png
+│   │   ├── sam_fail_564abbd832364a5f994cc9c1ace00805.png
+│   │   ├── sam_fail_5901f2e54f6a467b911d75fe6030e4ce.png
+│   │   ├── sam_fail_5acc5fd5358d44fe802e210cdcd9858f.png
+│   │   ├── sam_fail_5f31edd2e68d4f3292934ef369d02089.png
+│   │   ├── sam_fail_6a913e4925ca46dcaa6a24a04a3788cf.png
+│   │   ├── sam_fail_6b92d4626f5f48e2b54248625afa02d9.png
+│   │   ├── sam_fail_6c03f3fc3ec24d19ae67ff15a1c43d23.png
+│   │   ├── sam_fail_76ae44fd0d664bd2b62e5e8a5395e6ef.png
+│   │   ├── sam_fail_770ecbcbea234ca389febaa85c0ee1a7.png
+│   │   ├── sam_fail_7b1dd7425ba2430292369e4a5c5da1e9.png
+│   │   ├── sam_fail_7c20085cdf51444ea14371f842d2b154.png
+│   │   ├── sam_fail_7d9dcf6904ea43f7b2c2e0283aca2064.png
+│   │   ├── sam_fail_806bd28ea4e14b9c8af0e56a943a4aa0.png
+│   │   ├── sam_fail_83982793b1ae4162860eecca22279a0b.png
+│   │   ├── sam_fail_843a0798538a40948e4ce3799a0f1103.png
+│   │   ├── sam_fail_8c9dc1847add4c73806319c15a25785c.png
+│   │   ├── sam_fail_93874d54106341e9933ceea547175d5d.png
+│   │   ├── sam_fail_943b13b5da224da68fa9b63cfdf02d6a.png
+│   │   ├── sam_fail_948ff1bcaebd41a7a55e0e0a786caad7.png
+│   │   ├── sam_fail_98ae0e3048b24508b9b1ad8ee2402ee7.png
+│   │   ├── sam_fail_9deff9475bf34defb4cc3cdf101182cb.png
+│   │   ├── sam_fail_ac89a95eeff8494da5154d22b2c28df4.png
+│   │   ├── sam_fail_b1a3fa0edc4b4dbfac0544d55febef10.png
+│   │   ├── sam_fail_b3db3df8c4354da49c1d873f4a26ab77.png
+│   │   ├── sam_fail_b94abb48ba1b4e04aaea338a4a7e26cc.png
+│   │   ├── sam_fail_bb46fa44db9b48cd9d7969b776b7c184.png
+│   │   ├── sam_fail_be497b04d9414089b269f6df40bf5e16.png
+│   │   ├── sam_fail_cba77585ef654850b1a1940e5a6257ed.png
+│   │   ├── sam_fail_dc08102cc8db4e51933286f7cdfe7cdb.png
+│   │   ├── sam_fail_dd3a6b6aed2d4a789488d107a921e278.png
+│   │   ├── sam_fail_de090e1c86264062ad4b87ae475417d4.png
+│   │   ├── sam_fail_e191ba24b46d490c94d9d5ef4fc1bc20.png
+│   │   ├── sam_fail_eb9c589d88bf4daf9fb38445fc9359c1.png
+│   │   ├── sam_fail_f804684b227b4897b66bd8ce0c129743.png
+│   │   ├── sam_fail_f8e26a34c56c484c98292bf2ef3fa439.png
+│   │   ├── sam_fail_faf3ea247718473fbc86f9b4c3c8fbb2.png
+│   │   ├── sam_fail_ff028da801b14cabb380d4294f62fa2b.png
+│   │   └── sam_fail_ff817dca5ff44b768c6374ba514a66b3.png
+│   ├── detect_buildings.py
+│   ├── detect_buildings_aoi.py
+│   ├── detect_buildings_aoi.py-tofix
+│   ├── detect_buildings_aoi.py.25.12.2025
+│   ├── detect_buildings_tiled.py
+│   ├── feedback
+│   │   ├── __pycache__
+│   │   │   ├── extract.cpython-312.pyc
+│   │   │   └── utils.cpython-312.pyc
+│   │   ├── build_dataset.py
+│   │   ├── clean_feedback_dataset.py
+│   │   ├── extract.py
+│   │   ├── feedback_dataset.json
+│   │   ├── feedback_dataset_clean.json
+│   │   ├── index.json
+│   │   ├── metadata
+│   │   ├── missing_building
+│   │   │   ├── images
+│   │   │   ├── masks
+│   │   │   └── metadata
+│   │   ├── not_a_building
+│   │   │   ├── images
+│   │   │   ├── masks
+│   │   │   └── metadata
+│   │   ├── sam_decoder_finetuned.pth
+│   │   ├── utils.py
+│   │   └── wrong_geometry
+│   │       ├── images
+│   │       ├── masks
+│   │       └── metadata
+│   ├── feedback_yolo
+│   │   ├── data.yaml
+│   │   ├── images
+│   │   │   ├── 1e2c2e1fe19f4f50947f1b9dedfbeedf.png
+│   │   │   ├── 23e21667c52c4318a78718af757b006e.png
+│   │   │   ├── 3374d83b192848b4ac8c0117dae4e29e.png
+│   │   │   ├── 6cbdc6e24c2c4a79859bc3854a91b984.png
+│   │   │   ├── cdd74ce5823146d7b4c5d102ec2d0b4c.png
+│   │   │   ├── e085bf8c290546ab93a892e09e6b99d1.png
+│   │   │   ├── train
+│   │   │   └── val
+│   │   └── labels
+│   │       ├── 1e2c2e1fe19f4f50947f1b9dedfbeedf.txt
+│   │       ├── 23e21667c52c4318a78718af757b006e.txt
+│   │       ├── 3374d83b192848b4ac8c0117dae4e29e.txt
+│   │       ├── 6cbdc6e24c2c4a79859bc3854a91b984.txt
+│   │       ├── cdd74ce5823146d7b4c5d102ec2d0b4c.txt
+│   │       ├── e085bf8c290546ab93a892e09e6b99d1.txt
+│   │       ├── train
+│   │       ├── train.cache
+│   │       ├── val
+│   │       └── val.cache
+│   ├── glb_export.py
+│   ├── osm_cache_local
+│   │   ├── osm_00a33d9be1514470b0c8a78b51fc3ecd.geojson
+│   │   ├── osm_00fb6bf76f1257ca45b4635c535cb080.geojson
+│   │   ├── osm_02102400ea2e0474659e30bf8f6c6e4a.geojson
+│   │   ├── osm_039d7b1712b6057b5eab14f40799ae8d.geojson
+│   │   ├── osm_0455579ad59b84e3d5732adeb91bd114.geojson
+│   │   ├── osm_0b26516cef457a8116fbd2e1602a6fdc.geojson
+│   │   ├── osm_0c96cd9233c0bf2823ab1837cda85f7c.geojson
+│   │   ├── osm_0e67d54d02ee8f484bea77351b241982.geojson
+│   │   ├── osm_102ef8cbb2faf7ac235ad18ed3d21360.geojson
+│   │   ├── osm_11b8cfa4d395f20e07ebd5746154a731.geojson
+│   │   ├── osm_1294bf37ff3490adab0d19b6a1701f6a.geojson
+│   │   ├── osm_13bd57e25d2a4b936a4077e581cc2065.geojson
+│   │   ├── osm_157a362034680ffdcc1492654afa121b.geojson
+│   │   ├── osm_157ec46533890754068711c7a717b330.geojson
+│   │   ├── osm_16aa05318fb1820db29565b520ae3565.geojson
+│   │   ├── osm_17619feb79d57b755bd9c101d223339e.geojson
+│   │   ├── osm_187ab70e2a3a739a30d72fa7a258effa.geojson
+│   │   ├── osm_1a44aff34892e204b2542807d73bb9d3.geojson
+│   │   ├── osm_1b6e9278b746a54099291a7f2067d30b.geojson
+│   │   ├── osm_1d4a1de2f39c914c2f73c47f759b44ba.geojson
+│   │   ├── osm_1f6fdc8bc1bc0df8477f516e834d986d.geojson
+│   │   ├── osm_2169f6da02b4e45258e8bc59cb456ad1.geojson
+│   │   ├── osm_23418cfb977547e804996036d4e92a2c.geojson
+│   │   ├── osm_24a40accba6684ec7b7d0371cd8301e1.geojson
+│   │   ├── osm_25298f9fc615749d598a6d05d7b36b42.geojson
+│   │   ├── osm_25afc6e1344e724c4b06baea4f62e775.geojson
+│   │   ├── osm_26a11a19fba1c1b6ce7edafc2b770c2a.geojson
+│   │   ├── osm_27a6f979abe8b70c6ce7518332f82f4a.geojson
+│   │   ├── osm_2bef629c5b99878c7a94750d332a36aa.geojson
+│   │   ├── osm_2c8e9b10f92ea7dd628ec277d7073769.geojson
+│   │   ├── osm_2d1aa305d7ea5a66b0b0635c7755fa45.geojson
+│   │   ├── osm_2f4ea31b11a1247eb2ecf830283f5060.geojson
+│   │   ├── osm_3329ff462c1468ead0e4e0f2435626f6.geojson
+│   │   ├── osm_3842cb2ec3b4ebedd18a4095e788bd23.geojson
+│   │   ├── osm_3975d2fccb564638df66766ab96a0458.geojson
+│   │   ├── osm_3a16f5eedfe16313aa8d5b97d43e4751.geojson
+│   │   ├── osm_3d570d4ebaf1bafcf747b26622917c9a.geojson
+│   │   ├── osm_3f186258ad946c19c5f6d9a007ffc9bd.geojson
+│   │   ├── osm_40990c3e01651f9273ca561782ce4d62.geojson
+│   │   ├── osm_4311b15ba44cd130079141976bf0545d.geojson
+│   │   ├── osm_460dc023538cfdf3ea5601e6b58a8c68.geojson
+│   │   ├── osm_4883cdbbbaf1eb0d26bdcb0b8329e85e.geojson
+│   │   ├── osm_4a321e0b2ec504d01298c835982c441e.geojson
+│   │   ├── osm_4c9f6bf5345aa2bcdc5c85a20661706e.geojson
+│   │   ├── osm_4cbcee2062182cdc25975d285ee78555.geojson
+│   │   ├── osm_4ce970180d799394d07382d7230da022.geojson
+│   │   ├── osm_4f2e1ccbde7f511551ae8bc51d147380.geojson
+│   │   ├── osm_50166ea8cf0aa548c6abb3843357b68e.geojson
+│   │   ├── osm_516eeaa5452ee7ca1fc96bd1098a18c5.geojson
+│   │   ├── osm_5315abf062dc5ba32f32a44c41260f84.geojson
+│   │   ├── osm_541c2a4520906cb96052900424b7304b.geojson
+│   │   ├── osm_548feec8b732afae23bbc3a0ff5e22a9.geojson
+│   │   ├── osm_5581e1b31de9b78d2f4c9f36d3c69fa0.geojson
+│   │   ├── osm_55d4b05624d152a6539283d9c461d053.geojson
+│   │   ├── osm_57f5a317e48327fcf03ee8acf09677b5.geojson
+│   │   ├── osm_59f12bf8882ac7a1edbdc5f20caedb89.geojson
+│   │   ├── osm_5c1ee1b08d3112a235f27bf11ef400fa.geojson
+│   │   ├── osm_5c26c1faff0b70bad39a174705542e62.geojson
+│   │   ├── osm_5c2d6a3f6f410cf4f9f12eff355ac49e.geojson
+│   │   ├── osm_5cb99dd1a793244f6cad8d819887f06c.geojson
+│   │   ├── osm_5dfe4b8a2ec5efbc48840f4ea4b4d632.geojson
+│   │   ├── osm_5fa58d814ced349ab3fa9d7b22b302d2.geojson
+│   │   ├── osm_61323a2603e0bd482262e7bc1dfd9dc2.geojson
+│   │   ├── osm_61aa8c5bded4c70f940d7bf9aa06f786.geojson
+│   │   ├── osm_66e6ff47562ac188310f166f8c40d99e.geojson
+│   │   ├── osm_670200badb444a75f04b0f67ee7587d1.geojson
+│   │   ├── osm_68af180c1e3a61f9484a95bcb532d841.geojson
+│   │   ├── osm_68f1bca4a021596025f51bcc4e554d41.geojson
+│   │   ├── osm_69292423fd3232d0ecc51de1f84e6eb3.geojson
+│   │   ├── osm_69d17aad37aa491aa6a470ffaf331ee2.geojson
+│   │   ├── osm_6b26cb88bc435ac0b1b08bd46ad24da8.geojson
+│   │   ├── osm_6ba54e27412a69705313d96879ee76a1.geojson
+│   │   ├── osm_6c32103ba093f8cc53b7cedf26a162e2.geojson
+│   │   ├── osm_6c3226d405f6cc5e3a1907f88ac9e075.geojson
+│   │   ├── osm_6e554b2a09ae5d08cfaf06b55d5901b8.geojson
+│   │   ├── osm_6f48d1c655921a6f5258f025036c542d.geojson
+│   │   ├── osm_72a87440e848528f6eec138e5d7846e1.geojson
+│   │   ├── osm_74315a379b0129975717549b3fa7dd48.geojson
+│   │   ├── osm_78990706e8f594da8f47045e6fcbeabf.geojson
+│   │   ├── osm_7a4c649580e7501075437c593b03eb4a.geojson
+│   │   ├── osm_7acf9518ecc98e268b229e04e4280155.geojson
+│   │   ├── osm_7cfd441b3befc2c6eb39f249465cd250.geojson
+│   │   ├── osm_7d7c4435602c369d7291e2deb07228a2.geojson
+│   │   ├── osm_7ed92edc2447b2571fcd4e1eb355e4ab.geojson
+│   │   ├── osm_878655854c6dc2607c7775a48490b485.geojson
+│   │   ├── osm_8a0b0270f1cee750c0bdf3fe7ca00446.geojson
+│   │   ├── osm_8c853a999984de084622f8839bc5456a.geojson
+│   │   ├── osm_8d31067baeeac8847e87d37018c4178e.geojson
+│   │   ├── osm_8e01bb6625d16c3c584524593cd11830.geojson
+│   │   ├── osm_9110388a48dbb096d794fec888bee8d8.geojson
+│   │   ├── osm_9797685fd73f7d1efd73230483873156.geojson
+│   │   ├── osm_982ace38ed7cd804db0576958e52f386.geojson
+│   │   ├── osm_993d8a26a860fb910f25c76a4173f2d6.geojson
+│   │   ├── osm_9990060f0f30770487c3517fb558733a.geojson
+│   │   ├── osm_99c257b641fdf3356bf4ba00ed481385.geojson
+│   │   ├── osm_9c49566373751bdba797ed6683f0b196.geojson
+│   │   ├── osm_9ceef3662e58663cef886507845712e5.geojson
+│   │   ├── osm_9d51dc366590fe922012ada440b4cae1.geojson
+│   │   ├── osm_9ead88fb9690f76d01f327b24f325fd0.geojson
+│   │   ├── osm_a1210860f9c050261ce9149646973b08.geojson
+│   │   ├── osm_a178ddb34495ed810332f040caabf2a2.geojson
+│   │   ├── osm_a586748415d7cbff247ed0e54025c538.geojson
+│   │   ├── osm_a67ec124a6db03c639f961f933f9105f.geojson
+│   │   ├── osm_a69ddf2e953c2e974a885d96b688352a.geojson
+│   │   ├── osm_a7e3522be057c50e816d388f6e82428d.geojson
+│   │   ├── osm_aa484bec3bfc862d8e1af4d821f3b4ef.geojson
+│   │   ├── osm_ac3a7acae0610349d076746928a24555.geojson
+│   │   ├── osm_af301ce7e19a20bbca96b09339f2a9aa.geojson
+│   │   ├── osm_b43b3425c05376c53857e3ad964243bc.geojson
+│   │   ├── osm_b5a6f96abdd6bd11c6f4d7ba8470146a.geojson
+│   │   ├── osm_b84ede7a712707d6d65a9e6ef7f55738.geojson
+│   │   ├── osm_bd92046d29815b101145ef036cfea8a4.geojson
+│   │   ├── osm_bdc41ed3881aae1e41b46c9ae853c7b5.geojson
+│   │   ├── osm_c251de5b1208186ad19fc395c49fe2bb.geojson
+│   │   ├── osm_c330570b3dd5f7e9b6e8b294cd831d04.geojson
+│   │   ├── osm_c5b0b30278c6a82d3cc12d41a3103552.geojson
+│   │   ├── osm_c8409d8bf8704cd3f22df521dad6c0a3.geojson
+│   │   ├── osm_c9ca2972f1938ff5b8b5831cd3e785ae.geojson
+│   │   ├── osm_cc90291d4c390ff68b0ebe7988d2169d.geojson
+│   │   ├── osm_cf318d0bc83a3cafb572ed4939a1dcf0.geojson
+│   │   ├── osm_d17db446002b364ea409b2a47e48210c.geojson
+│   │   ├── osm_d268b9bd2ef810767973871ba5c40b7e.geojson
+│   │   ├── osm_d484e0a477f0945fbc0b1269af967311.geojson
+│   │   ├── osm_d91bf19301eddbdc211b0e14d1e24c46.geojson
+│   │   ├── osm_d99e61a7969d60f9d01166369b1caf1f.geojson
+│   │   ├── osm_dbd8466d1564a28b724fb1ad130d2264.geojson
+│   │   ├── osm_dc5be70f8fc13481d55f802eadf1ed88.geojson
+│   │   ├── osm_de6d1ad1e36a2e6c56828fe416a9dda5.geojson
+│   │   ├── osm_e3456fa5761a9df24dba90d989184cd4.geojson
+│   │   ├── osm_ea17caa7baaa409b9938ae338bfbb176.geojson
+│   │   ├── osm_ea83f714e42d5d41d26a35fbe10a8506.geojson
+│   │   ├── osm_eb8f40a304ba081942cc6c28bb7439d3.geojson
+│   │   ├── osm_ecd8855600d2e1dedc6db8d2a4d9beea.geojson
+│   │   ├── osm_edd377db4bdc2a07d560cac18db21019.geojson
+│   │   ├── osm_eef0aeb2da8f1bb4ab8deb2f29200254.geojson
+│   │   ├── osm_f1b371c4ea03de55d34f01a5f97757ff.geojson
+│   │   ├── osm_f1d462be26c1e9bf36088500c3c16864.geojson
+│   │   ├── osm_f2fa5ea292e589c1c9a9dd99ae0b64cd.geojson
+│   │   ├── osm_f34f07569cef3c2744b5adc79c3ce182.geojson
+│   │   ├── osm_f6b9b87c017eb0717c72132f049e3c3a.geojson
+│   │   ├── osm_f727f80e70491a1e9d06858ea937a0a4.geojson
+│   │   ├── osm_f83cd0c455cf47bcfcb0f8bdf7730734.geojson
+│   │   ├── osm_f96ff4cc9ec4d53171a5a2a8a60216bd.geojson
+│   │   ├── osm_fa42ed84add04de43cd8baf126dadeae.geojson
+│   │   ├── osm_fb1a54d309845215bccf7fa4b22bb9f5.geojson
+│   │   ├── osm_fb42e775757436437c0030b883bb7c00.geojson
+│   │   ├── osm_fd0c246ce518bade8e5fb0dac747bfa1.geojson
+│   │   ├── osm_fd792e8e5f2a2e01c147ce884b52072f.geojson
+│   │   └── osm_fda98c21e75775543685acb829ebdc39.geojson
+│   ├── output
+│   │   ├── aoi_buildings.glb
+│   │   ├── aoi_buildings.glb-bak
+│   │   ├── buildings.geojson
+│   │   └── buildings.geojson-bak
+│   ├── roof_geometry.py
+│   ├── sam_training
+│   │   ├── __pycache__
+│   │   │   ├── config.cpython-312.pyc
+│   │   │   ├── dataset.cpython-312.pyc
+│   │   │   └── losses.cpython-312.pyc
+│   │   ├── checkpoints
+│   │   │   ├── sam_decoder_finetuned.pth
+│   │   │   ├── sam_decoder_finetuned.pth.epoch10.pth
+│   │   │   ├── sam_decoder_finetuned.pth.epoch12.pth
+│   │   │   ├── sam_decoder_finetuned.pth.epoch15.pth
+│   │   │   ├── sam_decoder_finetuned.pth.epoch22.pth
+│   │   │   ├── sam_decoder_finetuned.pth.epoch5.pth
+│   │   │   ├── sam_decoder_finetuned.pth.epoch7.pth
+│   │   │   └── sam_decoder_finetuned.pth.epoch8.pth
+│   │   ├── config.py
+│   │   ├── dataset.py
+│   │   ├── losses.py
+│   │   └── train_sam.py
+│   ├── shadow_height.py
+│   ├── solar.py
+│   ├── test.py
+│   ├── tile_reader.py
+│   ├── tmp
+│   │   ├── aoi_016236f149bd49bab04488dbdce10b9f.tif
+│   │   ├── aoi_0182150316394fb780d92192b09b51cb.tif
+│   │   ├── aoi_020bb96df26246cb9801a9290ca7c0a9.tif
+│   │   ├── aoi_03f19c2942aa4013aa09c4373c10e4ce.tif
+│   │   ├── aoi_03f7decf2c3f45529fc818ae6bab98e6.tif
+│   │   ├── aoi_045503425602457186fc52a333619c97.tif
+│   │   ├── aoi_071bc35fc6f74faeb5d805f278f98156.tif
+│   │   ├── aoi_09d732e1fd614b2a8e6076535643ae79.tif
+│   │   ├── aoi_0afa2feac71947569098a43837e27c6c.tif
+│   │   ├── aoi_0b54669664854255ba0003c823f16137.tif
+│   │   ├── aoi_0bfa2c803cc448ed95f30b1f16deab2b.tif
+│   │   ├── aoi_0c36786e8f574a1ca4732cc2d0a81cfa.tif
+│   │   ├── aoi_0def92237b704c5ea673013d9f17b833.tif
+│   │   ├── aoi_115aafab99c944a192467e7c87707127.tif
+│   │   ├── aoi_13993c6102724cc097be91ab2632b07d.tif
+│   │   ├── aoi_154571df395a4e2993ee07a14c682bcb.tif
+│   │   ├── aoi_16c6fbb0f67e439eb4179771a701a484.tif
+│   │   ├── aoi_170ae9d52fa34445ba817d3f16610eca.tif
+│   │   ├── aoi_171ad8ebe0b0435893356626ef0eb65d.tif
+│   │   ├── aoi_173221d1e23f41e1812a88d273412f4d.tif
+│   │   ├── aoi_17348d7089e04588beadb2fccbe8a266.tif
+│   │   ├── aoi_173caf1c3fc64a56a2f5770bbd00dfc1.tif
+│   │   ├── aoi_17b2fdd7a6214b138b7c52c0c00cb5b3.tif
+│   │   ├── aoi_17ff2cf516e6476491c58c17a8e987b3.tif
+│   │   ├── aoi_1a2fbc8722f44bebb52bdddb26018516.tif
+│   │   ├── aoi_1a60ebd18a034af38e9bcf884b164efb.tif
+│   │   ├── aoi_1bca823a1b2e47fd980c1850b6408f2d.tif
+│   │   ├── aoi_1ea5261872984434845c3aee304d4356.tif
+│   │   ├── aoi_1fdad2f3e8cf48ce853947559652f084.tif
+│   │   ├── aoi_2074f4aed3674178a466e368918b878b.tif
+│   │   ├── aoi_210506784727498891e1cfd807edbaa2.tif
+│   │   ├── aoi_21724597a4ae453fb3573118dd26fef6.tif
+│   │   ├── aoi_217679719a594465839272f7f3f3df87.tif
+│   │   ├── aoi_21dda9b7a39a4b23b9a6d263924bd721.tif
+│   │   ├── aoi_221478fc106d44c2823c82f834558746.tif
+│   │   ├── aoi_22c5c38dbbbd4a849f268adc9a06a170.tif
+│   │   ├── aoi_22d333be882048cc8263a13f8f4cd0c5.tif
+│   │   ├── aoi_24ba7cb6df2b434e8c003f99832aa406.tif
+│   │   ├── aoi_24d555fa3db34a5ab9c2c7cf73106603.tif
+│   │   ├── aoi_24f06c38bc11419e8465d9d9c9df7847.tif
+│   │   ├── aoi_25ac8ccac39a4ea8a2c11ac959cb33f8.tif
+│   │   ├── aoi_2860c3070ad046dca049b8c1317851d7.tif
+│   │   ├── aoi_29e1c42c5e654b97847fc550666a46f0.tif
+│   │   ├── aoi_2b97cc13a486485c990420825f604848.tif
+│   │   ├── aoi_2bed172c232e4505b1efaab07f4387d0.tif
+│   │   ├── aoi_2c6919ef250a4ee7a3a561d0a58c9cb4.tif
+│   │   ├── aoi_2cee9cbb93d645f5b507bb5fe986887e.tif
+│   │   ├── aoi_2d2fdc8e56a4499bb3292954d18df16c.tif
+│   │   ├── aoi_2e622422ea4e44beaf0f4abc886e9532.tif
+│   │   ├── aoi_2e7ec3d345f54907885a766698e11a7a.tif
+│   │   ├── aoi_2ec2c017bb964d749a1a8e21317135e0.tif
+│   │   ├── aoi_32c79154216a4810a413db0b6837265d.tif
+│   │   ├── aoi_332f399f199e4abdb2af4f9da12e0044.tif
+│   │   ├── aoi_3411fa9a85784b489b0042171c2fd293.tif
+│   │   ├── aoi_354be9bf3f61457c91308db4512532e4.tif
+│   │   ├── aoi_36a1fd07acd0414e86db9eaf5f99ba3f.tif
+│   │   ├── aoi_385bc24e87b043d599d832d27861accb.tif
+│   │   ├── aoi_3b4fa89e2d1d4f99ab8f80b995079ad5.tif
+│   │   ├── aoi_3c1190c343ed45b9a19fb869d90f0978.tif
+│   │   ├── aoi_3c64b4c93b674f4ea55665e62a4105e7.tif
+│   │   ├── aoi_3c89e3a244fe4b328a268d3737dd8582.tif
+│   │   ├── aoi_3ec095a36f4348c891a38265e71f7a5c.tif
+│   │   ├── aoi_3efc0eaac83b44309cada04c7d44226c.tif
+│   │   ├── aoi_3f2c3452d5fd4a4589bd54807f321d18.tif
+│   │   ├── aoi_4032998ea74f417ab87ecb13d954c9d0.tif
+│   │   ├── aoi_4154548ed8304a41b9453ba72793a458.tif
+│   │   ├── aoi_450b4547d0a2414a8f9474c1bfb2540e.tif
+│   │   ├── aoi_45803b4fe042444b823a968223147d21.tif
+│   │   ├── aoi_4ad5f1ea766142d49d90e61225c3bbcd.tif
+│   │   ├── aoi_4bef8d886b554bb5966965015f897931.tif
+│   │   ├── aoi_4c68e3d1f8ea4b909e3629f5fc5de19c.tif
+│   │   ├── aoi_4d47a417994146a380c8584cad8c3fa6.tif
+│   │   ├── aoi_4db6d428175947f8bbeabe63c75fb0a6.tif
+│   │   ├── aoi_4f50fc144bae4f0da215f2f8be79e829.tif
+│   │   ├── aoi_506bae27aa0c415280b6fc05e2087ee2.tif
+│   │   ├── aoi_50ae8db36e3b4dd9b3ee9334d42efb4c.tif
+│   │   ├── aoi_52071ed8e1694038914bf8224b6a8044.tif
+│   │   ├── aoi_53d629a02c06487db6bb11270d9b152a.tif
+│   │   ├── aoi_54ccb3e1ccf147288fc8630063c1c572.tif
+│   │   ├── aoi_560acb6fad8249138c420f9249901564.tif
+│   │   ├── aoi_5a2ceed7a6104857a5599ca764d51545.tif
+│   │   ├── aoi_5ae65197d8504465a508e24e71f37a04.tif
+│   │   ├── aoi_5c4f36e9506d4c1db986f204cede8caa.tif
+│   │   ├── aoi_5c835d6173b94e85a9124cab6a6f050d.tif
+│   │   ├── aoi_5e442ff6808a459bb790668155de3a41.tif
+│   │   ├── aoi_5fe32d26f4fe499fa6469efad6de17b0.tif
+│   │   ├── aoi_6083906b2bf14e95b8ba61285c23c33c.tif
+│   │   ├── aoi_61589d5e0e60445ebc33e5636ededd89.tif
+│   │   ├── aoi_619a8b0eb9c848fb95eb0281e94a7437.tif
+│   │   ├── aoi_61cbb78000ed4801b41b0cbdd0f29222.tif
+│   │   ├── aoi_648e1870a2574bebb45b76ad884694ff.tif
+│   │   ├── aoi_652401d542574cb6ac7bb860f6ebb73c.tif
+│   │   ├── aoi_6675d7e129a1410eb61521d0a01cd6d6.tif
+│   │   ├── aoi_66ba89b505f44ad69e16ff5e8fc3a829.tif
+│   │   ├── aoi_66d65b00794c492e9318bbb47f26c096.tif
+│   │   ├── aoi_685eec77e2eb4564b0a31c3413f267a2.tif
+│   │   ├── aoi_69dc2e732c64414083351664036d95d2.tif
+│   │   ├── aoi_6a29916c88fc42549acf8e5856feb4f2.tif
+│   │   ├── aoi_6b840f8e6e8e4a068ad7330b96078506.tif
+│   │   ├── aoi_6d0dce4f3a554d4a9a131b2a911802c7.tif
+│   │   ├── aoi_6dcb8e3e9a494c219b1105750ec7d122.tif
+│   │   ├── aoi_6f2e71729f87480ab41238ae521c09fd.tif
+│   │   ├── aoi_6fa6dbcb067d41eabeea0275d56c4a87.tif
+│   │   ├── aoi_709fe80b85954a0ebcaa530b35a5687e.tif
+│   │   ├── aoi_711f8023206a4747a18130d62806c670.tif
+│   │   ├── aoi_73291eb8ca15473cb74cb799b013bcce.tif
+│   │   ├── aoi_73377715b5d046c89e8dca2b2ff2d280.tif
+│   │   ├── aoi_736e603444054825a2ed31d767a63da2.tif
+│   │   ├── aoi_73ec12aff3f84b048fa9ab8d55f746b2.tif
+│   │   ├── aoi_73ff66099ac548a5b4a01d4901037c45.tif
+│   │   ├── aoi_7512247fa8a749079438ec0f80f0c3e4.tif
+│   │   ├── aoi_7563399efde3442c8b26b23c32437934.tif
+│   │   ├── aoi_760dd93a00bb454ba6a096a0cd8b897d.tif
+│   │   ├── aoi_77ae3c15a66e4bf5a4ca28b371f67c5f.tif
+│   │   ├── aoi_78118b2a09a84af886f1e3568d5c08fd.tif
+│   │   ├── aoi_7c247ba5bf1b464eb7f50709e8449521.tif
+│   │   ├── aoi_7cbd3b5c4f4e4165b875c8b616412178.tif
+│   │   ├── aoi_7cd27e41380947b39c4fd0e40a5a0a53.tif
+│   │   ├── aoi_7db2fb66ac2d43f1b633814dce5c1998.tif
+│   │   ├── aoi_7e254247f4ad415eb0b8cca281ad4005.tif
+│   │   ├── aoi_7fce4798620844c5b23240c57d30d69b.tif
+│   │   ├── aoi_812aa6c411a1497a80d50511e7046824.tif
+│   │   ├── aoi_81ae1be9ebfb44d18555aad7f6588a7e.tif
+│   │   ├── aoi_82549bbfdc9a4546a8ce2af306086c2f.tif
+│   │   ├── aoi_8338c0f70a9f4676b634367d79289f74.tif
+│   │   ├── aoi_839e1399111b472ca7e86e7e695b710a.tif
+│   │   ├── aoi_843786a9afdb49a396ca21178f4c3720.tif
+│   │   ├── aoi_84d9417059ec4438b9e9a14530126d94.tif
+│   │   ├── aoi_85613a3ebf3541a8ace15e965e57eec6.tif
+│   │   ├── aoi_8571e2114e5c4cf59c9a8fd2cf171998.tif
+│   │   ├── aoi_8752f9c3da8c48659198dcdadec93473.tif
+│   │   ├── aoi_8780515716924eb497dc842bc7e67ce4.tif
+│   │   ├── aoi_880b79c74a9645b7b4513ef038fdb304.tif
+│   │   ├── aoi_8b803a415a6546e6bdab60c6a6f5b797.tif
+│   │   ├── aoi_8b977e00b49946e4b252ca27bea2cff4.tif
+│   │   ├── aoi_8d00fb93352f4df3a2e4bf69477fb6b9.tif
+│   │   ├── aoi_8d79b470ebd546279fd494cf3c37574b.tif
+│   │   ├── aoi_8df0c11b55244ae2afced60df3cf8c17.tif
+│   │   ├── aoi_8f5994f755a24d718330830209796597.tif
+│   │   ├── aoi_905ca146f72e4716a5b4535dc3d317c4.tif
+│   │   ├── aoi_90daf4b39d7041748cf914912283d806.tif
+│   │   ├── aoi_90dd728146074f42858d5bb647134734.tif
+│   │   ├── aoi_90e85e5b16454197a53b3f2768e44427.tif
+│   │   ├── aoi_91af40758c4e427094e7648bab55fc7b.tif
+│   │   ├── aoi_933c07ff61a14661bf59e8e09ffc49b3.tif
+│   │   ├── aoi_93798fea02224112ab9386f369e58786.tif
+│   │   ├── aoi_943632f370214ad5a043d8d4f2296f75.tif
+│   │   ├── aoi_95271680f46c4e238516b1840c3ea6d1.tif
+│   │   ├── aoi_9543f8d62ed24415b3519b43ae0c0d4b.tif
+│   │   ├── aoi_960208e85b6143d6b429f0559bc45da5.tif
+│   │   ├── aoi_9704640733864081b7ddd92ca3b45600.tif
+│   │   ├── aoi_97b04ae00a1b44bbae8c07d67a470d1c.tif
+│   │   ├── aoi_99baa707af124950b6cca5fc59b277b3.tif
+│   │   ├── aoi_9a4cc345adb64b9894e72b7861440396.tif
+│   │   ├── aoi_9a75993e1e9a417db9226c8de746ea38.tif
+│   │   ├── aoi_9c6b64daa7ba4888bc58f04fc221be1c.tif
+│   │   ├── aoi_9cf2118bc8344300aaf653bdaaa45fb3.tif
+│   │   ├── aoi_9e2bda343c92407aab036984a1a0216d.tif
+│   │   ├── aoi_9f456d907e7b441a9ebbc82cdaabe75f.tif
+│   │   ├── aoi_9f4f4f9edd174b1ea22fa685b20a6266.tif
+│   │   ├── aoi_a1adfe6b27204dac960a393d00f225ae.tif
+│   │   ├── aoi_a2e34001d00c41c78dc29bd254ece741.tif
+│   │   ├── aoi_a3340f7ab6f846928382171696e0fc31.tif
+│   │   ├── aoi_a3b30a0c58eb4dfb99fd26b48cc63849.tif
+│   │   ├── aoi_a4dd386dd49b4d89b2c5cee42e5d1ad6.tif
+│   │   ├── aoi_a9e0a1bea65d484e82a78b41dd060d32.tif
+│   │   ├── aoi_ac2ecb5734f34b2ea2cfb29637f36c87.tif
+│   │   ├── aoi_ae4121b703884091bb43c27b2cb04b48.tif
+│   │   ├── aoi_b093a3ba84bb49708a7e2452341dec00.tif
+│   │   ├── aoi_b0fd36c663bd40d1ab596fdc1554a351.tif
+│   │   ├── aoi_b1cf249e11a945128e7d3013960cd7c9.tif
+│   │   ├── aoi_b2f4b82725024712bbc8197852a04a10.tif
+│   │   ├── aoi_b43ba2dc8e964beda9e0d1eaf72ad1fa.tif
+│   │   ├── aoi_b543d27dd576469491e112269afeeaf9.tif
+│   │   ├── aoi_b6b11a2cb273467d993ef438aea8a296.tif
+│   │   ├── aoi_bb41bf0c8f3f434e84d5ee305ecccddb.tif
+│   │   ├── aoi_bdad235bc9e04d54833c709dce99a176.tif
+│   │   ├── aoi_bf2ba67b48d747a582fca8d27e081123.tif
+│   │   ├── aoi_bf59df9f477244de998485c2ff24b712.tif
+│   │   ├── aoi_c152ad006ac342889c7490c5e1619e75.tif
+│   │   ├── aoi_c3820df2f6dc40ad87350a3a7e6e65d6.tif
+│   │   ├── aoi_c3f61bc368a74c72b3164fefc338cd66.tif
+│   │   ├── aoi_c407c5c4cbc84939a688c8745e91febb.tif
+│   │   ├── aoi_c4caadeb332b4a7789ea16c0bb02dd0e.tif
+│   │   ├── aoi_c53fc8dec7f4402baf1067c34c22d740.tif
+│   │   ├── aoi_c59108c30f434be8bf931488a150a814.tif
+│   │   ├── aoi_c6c21ca631094f5db82b4814c759f2fc.tif
+│   │   ├── aoi_c88a28479f864c53ad6fc950b29c89b8.tif
+│   │   ├── aoi_cd3089a678b64ed6b3f6f76492108ae4.tif
+│   │   ├── aoi_ce645c22df7d4a9691a8f01dba57404f.tif
+│   │   ├── aoi_ce938f3634a54d97bf98a2e3c6835127.tif
+│   │   ├── aoi_d04817fc3da54b289a0e3a8864d0f5a4.tif
+│   │   ├── aoi_d0c918a79f3c426481d79a5d3dd3b5cc.tif
+│   │   ├── aoi_d0fb7b5c9d2e40b3bb034a58cca7fa07.tif
+│   │   ├── aoi_d1d196831ede418f828a711f3294aa19.tif
+│   │   ├── aoi_d27a1ebf3a3843b08b04fe119b5013ee.tif
+│   │   ├── aoi_d4b98c3899c44a8c86df135ffb68ca6e.tif
+│   │   ├── aoi_d649e26f1a28453c868e1e0384963b44.tif
+│   │   ├── aoi_d73a46e7c30440488bcd4fbaf1e85db4.tif
+│   │   ├── aoi_d74186c4426946b88c92e1a600bbc97d.tif
+│   │   ├── aoi_d7c127e0e26a4e19906cb3a6bbadf155.tif
+│   │   ├── aoi_db341ac94fc7443da3298c80fe586195.tif
+│   │   ├── aoi_db6415d205cc4047b4975e8b5d4333bc.tif
+│   │   ├── aoi_dba4ec5975dd418ba7281bb8ff66411e.tif
+│   │   ├── aoi_dc2a6bdf6747456f9767313dfad72bdf.tif
+│   │   ├── aoi_dc83182a56a44b04a28b5c874ed1390e.tif
+│   │   ├── aoi_de76926e8a90468aadb45f09e4171351.tif
+│   │   ├── aoi_df017e4baced4cc19532ae2eb9d55956.tif
+│   │   ├── aoi_dfeae1a487bc4e49af34aa5e3f0a9ca7.tif
+│   │   ├── aoi_e102c5891f2d4f9784f8d5ac75fa6f50.tif
+│   │   ├── aoi_e1bef0e0a8ed4ff595aee39c216715f9.tif
+│   │   ├── aoi_e283a49d054448b9b4c051d347cd716d.tif
+│   │   ├── aoi_e2b9700f69db4f9ca7529ecf1978053a.tif
+│   │   ├── aoi_e40c66650fb840c494f4cc46cf7efde7.tif
+│   │   ├── aoi_e4f1744b7d9b41818a3ffa1ad89b4c23.tif
+│   │   ├── aoi_e53bf5201f524d0bbe8ca750c63ba01f.tif
+│   │   ├── aoi_e650ad8e6c6c487f80d755927cdea058.tif
+│   │   ├── aoi_e7c1776c6e7648ecb41d2baf402462bd.tif
+│   │   ├── aoi_ebc238fb06d6486fa2ff2c4273d7e2af.tif
+│   │   ├── aoi_ecd76db7d6c8431f99faf3fafa3d4f49.tif
+│   │   ├── aoi_eeb8a32c814a4b4e9009248ff1bf53d4.tif
+│   │   ├── aoi_f0f04cd511be45ffa5205f6de133d9e5.tif
+│   │   ├── aoi_f2d9711bc94e40f0adf09c285c0a7564.tif
+│   │   ├── aoi_f63ccd8f3e7c41eb9b841e24f37bb443.tif
+│   │   ├── aoi_f88b73482bc54634b22b0f666a533e67.tif
+│   │   ├── aoi_fabdc775fd3848538039fc873f9bbe7b.tif
+│   │   ├── aoi_fabf8f7ea90f45cc95ba2d9d7a24d192.tif
+│   │   ├── aoi_tile_00431624257d42ae96786ffe26a4c652.tif
+│   │   ├── aoi_tile_05921f8be7794a98b2c550a46e387da5.tif
+│   │   ├── aoi_tile_05ce495d5872403e85f180f9e95d6495.tif
+│   │   ├── aoi_tile_065726c59d2c439ea4822ffa6656e051.tif
+│   │   ├── aoi_tile_0768f6e737194f478d40c3e0ca57437b.tif
+│   │   ├── aoi_tile_07872f4c6b454bf58904db27e78b670e.tif
+│   │   ├── aoi_tile_08426c10da3743d2889253ce703fc328.tif
+│   │   ├── aoi_tile_08b573a4b3124be7835590f29988cfe9.tif
+│   │   ├── aoi_tile_08ba234a5d8f46d7a391cfa47eec6acf.tif
+│   │   ├── aoi_tile_092f8fef62a9465eaf20bb1856ce8390.tif
+│   │   ├── aoi_tile_0970a797255046109650ee154a949f59.tif
+│   │   ├── aoi_tile_0984155c1b294e349d9442b145b195e4.tif
+│   │   ├── aoi_tile_09de46b72b094955b054ca86af72c07c.tif
+│   │   ├── aoi_tile_0b27f352dea34c96bf565523c7edce15.tif
+│   │   ├── aoi_tile_0b972597cc294c9392a2a3a0bed5867d.tif
+│   │   ├── aoi_tile_0bbc2c8a733a449e97236be2fe2653fc.tif
+│   │   ├── aoi_tile_0cb59be4554c4745b86a5f2e0c676a62.tif
+│   │   ├── aoi_tile_0cef9961a3a34ec68637bf08b635dc0a.tif
+│   │   ├── aoi_tile_0d118a5cd8fa4b6584269a976e051ad8.tif
+│   │   ├── aoi_tile_0ed2df3b5ca54769b60423cb6da2d9b2.tif
+│   │   ├── aoi_tile_0ef804fde91b4cad898c366cf6f05fd6.tif
+│   │   ├── aoi_tile_0f95818766904cdbad00336c9789ce45.tif
+│   │   ├── aoi_tile_1130754bd78a42279cf73400e32ca45a.tif
+│   │   ├── aoi_tile_1137504ca02f4931b382672093c374c1.tif
+│   │   ├── aoi_tile_12b2729f4a824cc1ac956cd2afdb0b7b.tif
+│   │   ├── aoi_tile_13791c43dbea46efb4dacc4a301ca4c2.tif
+│   │   ├── aoi_tile_1392fc653e27478a85213c7bfaf63c46.tif
+│   │   ├── aoi_tile_13edd51aba964e82a6f6ec4202fe16af.tif
+│   │   ├── aoi_tile_14095d0b54724a58aa050649a451ed79.tif
+│   │   ├── aoi_tile_15b25d4cf33f441db73ada51ce14719b.tif
+│   │   ├── aoi_tile_16598d376dab40fbbdff640ea0e1a0c6.tif
+│   │   ├── aoi_tile_169a2f09bbb445dcb9909c1f6eb9a042.tif
+│   │   ├── aoi_tile_170bb767506a4836b96ddcb35151c08f.tif
+│   │   ├── aoi_tile_1847d80f3e46409e8488152f0ade59fb.tif
+│   │   ├── aoi_tile_1a0eef6563f04c4a9484a2af02b2b58c.tif
+│   │   ├── aoi_tile_1aad32c7fdcc4874b8423e54ebad64f0.tif
+│   │   ├── aoi_tile_1bdfe2e30f5b4a9c8736a7a9f81309d8.tif
+│   │   ├── aoi_tile_1c9c1ee144294e37aa0dd62ae7da3f6f.tif
+│   │   ├── aoi_tile_1db22af7022e43939f7343df0dfe4dbb.tif
+│   │   ├── aoi_tile_1e6559cd990e49258af2fc674ec2d99b.tif
+│   │   ├── aoi_tile_1fa9cf8de7444bb785471edb2042dc29.tif
+│   │   ├── aoi_tile_1fc692a4eb1641e79275da59fde125d6.tif
+│   │   ├── aoi_tile_2108116060ed4db3b8487a6b85e15886.tif
+│   │   ├── aoi_tile_215889ffc9734268aa57afac9147b81d.tif
+│   │   ├── aoi_tile_21fba3df7f6d42ad94dccbed4e89d3d5.tif
+│   │   ├── aoi_tile_2358b38f82fa4c18868ce0224cdb8bc1.tif
+│   │   ├── aoi_tile_23d9847d7dca4dd9a1b60c383e958c7f.tif
+│   │   ├── aoi_tile_23fbd031183f49d89939d4a22d0275a6.tif
+│   │   ├── aoi_tile_2427d7f4aeb3447bb9df7a762b86fa07.tif
+│   │   ├── aoi_tile_243a99dfc2b2489c8996bfb519fae7dc.tif
+│   │   ├── aoi_tile_26087f2d8d8747e0950e065ffcd1b89e.tif
+│   │   ├── aoi_tile_2779b6189eb24849a8451f2e33cbed75.tif
+│   │   ├── aoi_tile_28a8e99344d54efa97a5ad299d2bdfad.tif
+│   │   ├── aoi_tile_29a18588820e40c9b1085416eee506fb.tif
+│   │   ├── aoi_tile_2c9ecd0f352d434a8999426ce5038f5d.tif
+│   │   ├── aoi_tile_2d05374587cc41ef9d729abf1b303500.tif
+│   │   ├── aoi_tile_2d9b9754e1bd41cab32de97ae5279046.tif
+│   │   ├── aoi_tile_2e1a12f40127402da15d2d960e428ef7.tif
+│   │   ├── aoi_tile_310cbd7a21c444e6a7fff99a7270f3bf.tif
+│   │   ├── aoi_tile_3156ddf9c04b4062b559d98ce14a6a1f.tif
+│   │   ├── aoi_tile_32055503de1b4a82942829c039653cc3.tif
+│   │   ├── aoi_tile_32cf1eb3ee574f6aaba5510b6da7cda7.tif
+│   │   ├── aoi_tile_330da7c8ecf74a588affcd28d2c72ea6.tif
+│   │   ├── aoi_tile_34d444f08ee04ffabaed6f3a3d19681b.tif
+│   │   ├── aoi_tile_35c3ec9f87fb40ec9c8ce745e81334ef.tif
+│   │   ├── aoi_tile_3669c7f0e3354c3b949294eff4bc8b65.tif
+│   │   ├── aoi_tile_36ad6deeba1340c4b18242b32dad0b0a.tif
+│   │   ├── aoi_tile_38e87eb2a3704227957f94d39668880c.tif
+│   │   ├── aoi_tile_3ad69260e568450bac0544558cc45c09.tif
+│   │   ├── aoi_tile_3b4402a5ddce46d681754ab70169ad74.tif
+│   │   ├── aoi_tile_3b87689aaf7149d5832a0fc6a04b0f85.tif
+│   │   ├── aoi_tile_3c25a6ad256d474eafa6bdf89892b531.tif
+│   │   ├── aoi_tile_3d316f7d2bc5420a9f6a124c50fa1da4.tif
+│   │   ├── aoi_tile_400f4741496d4779a29be1a600a6ee74.tif
+│   │   ├── aoi_tile_406edfcb62c148679dcc5822425004fd.tif
+│   │   ├── aoi_tile_409ae0a9b04d4a56aeb4f1bfd3f8a507.tif
+│   │   ├── aoi_tile_415ccfe721e44b3db074a1667ed68df9.tif
+│   │   ├── aoi_tile_42674e89d6964aaab94366075f6a407f.tif
+│   │   ├── aoi_tile_42fdc61e5e1a431f906a4266779e103b.tif
+│   │   ├── aoi_tile_438b28c183444ec49c2a1483bc56f463.tif
+│   │   ├── aoi_tile_43ae9d4091b0490e81714d9cc59debac.tif
+│   │   ├── aoi_tile_447cd3773e6543d2890f70540614d2d0.tif
+│   │   ├── aoi_tile_4516d6b68885481eb10943eaf8c102fc.tif
+│   │   ├── aoi_tile_451c9284af9f40219b60337c42200016.tif
+│   │   ├── aoi_tile_466804a79a83410ba5448650ae506261.tif
+│   │   ├── aoi_tile_487dc968ec744b868f43fbe2dfb67ea4.tif
+│   │   ├── aoi_tile_49192ef2290a49319f4ffc1148e41209.tif
+│   │   ├── aoi_tile_496f8d5de05e4a848e6ef518456befab.tif
+│   │   ├── aoi_tile_4a6c9bb9f16841f89d7cf222a33788d6.tif
+│   │   ├── aoi_tile_4c66e21ae5d34cefa10c8638a1d390d5.tif
+│   │   ├── aoi_tile_4d9220fee5cb48dea9286a54842a6a60.tif
+│   │   ├── aoi_tile_4e427ac3099c4fd29bf886e0b1ed7808.tif
+│   │   ├── aoi_tile_4e4eaa6a1a5a42d2a2d5f12b12f23c3c.tif
+│   │   ├── aoi_tile_4e54c74864e542269f47ed0b26537713.tif
+│   │   ├── aoi_tile_4ef1238739a7445791981233aafaba4d.tif
+│   │   ├── aoi_tile_4f765ec124cc458994d24adc26603a08.tif
+│   │   ├── aoi_tile_50c1dfb539bb42a3a960dcc3fd8bd4e8.tif
+│   │   ├── aoi_tile_512252b218334f00a4416e56e4a6f0a9.tif
+│   │   ├── aoi_tile_51952ef611f84f9e95992381e63d46ca.tif
+│   │   ├── aoi_tile_5325619633f44e33a65fdfcc9f9d91ad.tif
+│   │   ├── aoi_tile_536b05b23cc94a679cf5c9b4d791e35e.tif
+│   │   ├── aoi_tile_53b56230be414f538c451ee68cb31c8e.tif
+│   │   ├── aoi_tile_53f32bc870564deeb02da1c390c8544d.tif
+│   │   ├── aoi_tile_54a322d3a3944ed6b765c446dddfbf2e.tif
+│   │   ├── aoi_tile_55a86f7ceaf94ef68563b0f9099d6a70.tif
+│   │   ├── aoi_tile_55b7b0489fae4d7aa352ecccae52875b.tif
+│   │   ├── aoi_tile_568d080c7cba4489a049d15ab8c60506.tif
+│   │   ├── aoi_tile_568d442701bd4074b057f6e20c67865f.tif
+│   │   ├── aoi_tile_575437ad30734e24bd2c488132016a57.tif
+│   │   ├── aoi_tile_5775708160a64d6cbf8f6f37005c4b88.tif
+│   │   ├── aoi_tile_57e4f22f4e154cbab2b7d05a19ee9dc2.tif
+│   │   ├── aoi_tile_59dd240e6dec44dbb6a7974ef5ee5502.tif
+│   │   ├── aoi_tile_5d5cd5ae600e47c49aa465a0d8554878.tif
+│   │   ├── aoi_tile_5dbff3097d2949568db8140611f838c2.tif
+│   │   ├── aoi_tile_5e3bbf084e88488dbe6e2a5ac00631a3.tif
+│   │   ├── aoi_tile_5f856db98498466c94fa5f786f698adf.tif
+│   │   ├── aoi_tile_602a5215ea454cc1bd87f48869dc070a.tif
+│   │   ├── aoi_tile_6050e8d98230449487800dd94b0ea73c.tif
+│   │   ├── aoi_tile_61c0b9c7bd054e5ca0003270659209f2.tif
+│   │   ├── aoi_tile_6254dbd1a7394300ac2fb4dc650ecd58.tif
+│   │   ├── aoi_tile_6288be5a262848d2908cfd0c6aac2585.tif
+│   │   ├── aoi_tile_64f5c49c04ae4d12ad6877c1e92873ec.tif
+│   │   ├── aoi_tile_6565b3ec254d418eac6c6a0919a5396f.tif
+│   │   ├── aoi_tile_6760db80ce404e8d9e71fdef4b84f64b.tif
+│   │   ├── aoi_tile_697095ffff0d430e8fd3baea05d59fc6.tif
+│   │   ├── aoi_tile_697a26e38c294b2ebead19e811cce3b8.tif
+│   │   ├── aoi_tile_6a11a2836ad3498886c1167238f4c6e7.tif
+│   │   ├── aoi_tile_6a5f0eb88d8d4625aca4e9ff49f815d8.tif
+│   │   ├── aoi_tile_6a656f8728ab4e61bd97b7170ad9aff9.tif
+│   │   ├── aoi_tile_6c71e775dabb469bbee849c64cf341de.tif
+│   │   ├── aoi_tile_6d26ed8ae9534abbacfeae6b5fdf5533.tif
+│   │   ├── aoi_tile_6d4afa9e30884e14b5396bdd8ee43db1.tif
+│   │   ├── aoi_tile_6e5b967576eb4bd0b3331ad9e5932970.tif
+│   │   ├── aoi_tile_6eaec116e4d44787b3f5c907f69e9464.tif
+│   │   ├── aoi_tile_703ca1c06cdb40c0b5a6de9ece9311d4.tif
+│   │   ├── aoi_tile_71d0744edbc64764b06f3ac8f36992fa.tif
+│   │   ├── aoi_tile_72803904fbce4140a1d77b364808d439.tif
+│   │   ├── aoi_tile_74830b36523d48248b5efc75f0d71168.tif
+│   │   ├── aoi_tile_7483304195d04d9290a82c08ad34eaaf.tif
+│   │   ├── aoi_tile_74bf7070fe86414981848734f171294b.tif
+│   │   ├── aoi_tile_74d377a41d224c5f838d4573c7e3350f.tif
+│   │   ├── aoi_tile_75032d6890554b00bfbb2d1a437a570d.tif
+│   │   ├── aoi_tile_753577b19a704eb1bcadd39fbcb925b7.tif
+│   │   ├── aoi_tile_75b36c8e7d5c448da0db839fc707b105.tif
+│   │   ├── aoi_tile_76689288571a480b8aec45c1266a6dac.tif
+│   │   ├── aoi_tile_766a83e32f304dfa86c17d3837057923.tif
+│   │   ├── aoi_tile_77ea148eac7c41cda581fbf9f9752550.tif
+│   │   ├── aoi_tile_78710dd938bb48e39b9a714c4bd86d19.tif
+│   │   ├── aoi_tile_78dd7fc4f3b040718201ae184b207915.tif
+│   │   ├── aoi_tile_78e08c9da124415d880dc877c417237d.tif
+│   │   ├── aoi_tile_790112221fae4967be27900d728d6a3b.tif
+│   │   ├── aoi_tile_79ab9bc3b0254543a3b0db526c2f8163.tif
+│   │   ├── aoi_tile_7a68382fceb042ee9158365609537626.tif
+│   │   ├── aoi_tile_7a950373063a43b2ab91f561fd26e079.tif
+│   │   ├── aoi_tile_7b4a6f6b22164d1691b2bde11297c5c2.tif
+│   │   ├── aoi_tile_7da197aefa064e08b1514c4c0817e6d7.tif
+│   │   ├── aoi_tile_7e2882b8cfe140f7b174df1bb009136a.tif
+│   │   ├── aoi_tile_7e91c8709da6445c8fffc96af76e1705.tif
+│   │   ├── aoi_tile_800e7b4364cb402481a9cc1f5a88b1a4.tif
+│   │   ├── aoi_tile_8013a556f18d4581ab1fa0345aa83da0.tif
+│   │   ├── aoi_tile_8095625ec4714933aea19f7f210a411d.tif
+│   │   ├── aoi_tile_81ce4b5e546349469096bfabd20eaf40.tif
+│   │   ├── aoi_tile_8255dff24d044f31b31b0dd0e8f3fcca.tif
+│   │   ├── aoi_tile_82a81ee1bcd644d9b7f90766a84a7a52.tif
+│   │   ├── aoi_tile_82c1a9ce1f2846f1ad545741e3c82508.tif
+│   │   ├── aoi_tile_84b8861b1fdb480b90989b2c7dd08922.tif
+│   │   ├── aoi_tile_851b9c78b8f749569a176f8544b93916.tif
+│   │   ├── aoi_tile_8531ecd535534f5bb70d03eb898ccdc0.tif
+│   │   ├── aoi_tile_878f6defc2104f53ae9313ad524f342d.tif
+│   │   ├── aoi_tile_87cfe60c6701492c8afe8dedff7d334b.tif
+│   │   ├── aoi_tile_89f5d07dc7c74abda9193eabe646daa7.tif
+│   │   ├── aoi_tile_8ba90f4a46d44054b988a8e064059a83.tif
+│   │   ├── aoi_tile_8cf8021bcc984c3ebbd475ac361a6614.tif
+│   │   ├── aoi_tile_8e712acba1594425861e2b6893013a8d.tif
+│   │   ├── aoi_tile_8ff3a6770ecf4a07b0ef0b561b8a6c1d.tif
+│   │   ├── aoi_tile_900e45dd1e784a29bebafe9e43f7e5b7.tif
+│   │   ├── aoi_tile_90c2d408206e49b2a7ec3237f92f0326.tif
+│   │   ├── aoi_tile_90ceb2d8da1d42aea68eec1b664ab6f6.tif
+│   │   ├── aoi_tile_90f045175e3a4edca6b9f0b3819fd23b.tif
+│   │   ├── aoi_tile_90f2d7df5f5c4e5f8e1c778513c002eb.tif
+│   │   ├── aoi_tile_9101a27be34941908d6ffbb8c4823a42.tif
+│   │   ├── aoi_tile_912a6a14490841a6b598a1496319b72e.tif
+│   │   ├── aoi_tile_922e88f504c7459cb8ae67256109f0a2.tif
+│   │   ├── aoi_tile_92ab82c6d5924b98ba9be74f0700ec71.tif
+│   │   ├── aoi_tile_92b9aebfc2d1437b8ab98d0dcb8e58e3.tif
+│   │   ├── aoi_tile_930086e4ab344c76a2b9df1c0ba62ddc.tif
+│   │   ├── aoi_tile_9309be16ca16402c895be61b2161908a.tif
+│   │   ├── aoi_tile_936586e1dc63433395c9528a771062d0.tif
+│   │   ├── aoi_tile_9529c4d7c27a42a19a7fe87ee0e6c141.tif
+│   │   ├── aoi_tile_955ae880cd054159bcd41736e22717f6.tif
+│   │   ├── aoi_tile_9594918b59514e0c848f6e2dcb91730c.tif
+│   │   ├── aoi_tile_959bae65092a4c22afe038860f2f0f4b.tif
+│   │   ├── aoi_tile_985d1e9856884268bb0217d16d20823f.tif
+│   │   ├── aoi_tile_9b3eb5d43c6846e69bed405e43829572.tif
+│   │   ├── aoi_tile_9cb1f26135964aa4acd2f8e239151142.tif
+│   │   ├── aoi_tile_9d91c888debc43aaa4380d1f99fed06b.tif
+│   │   ├── aoi_tile_9dc8b7ac79924b6eb5f2a00f9b610b29.tif
+│   │   ├── aoi_tile_9f2a8631f6ba446f9431fba4cb14fbf3.tif
+│   │   ├── aoi_tile_9ffc8fe939c04281beaaeebce8b600b8.tif
+│   │   ├── aoi_tile_a0b9e7658f1e49fdb74f49c15fc36b89.tif
+│   │   ├── aoi_tile_a12b47b9c8c3479f85d5546a391a6e0e.tif
+│   │   ├── aoi_tile_a1b404e8283c4167ac9af90a92599f3f.tif
+│   │   ├── aoi_tile_a1f243f580b1405fa27e62debda2bb97.tif
+│   │   ├── aoi_tile_a2314c84af6b41b3b98928f597096868.tif
+│   │   ├── aoi_tile_a25be4f53bf64f0fa4c5722e5d4a8fb9.tif
+│   │   ├── aoi_tile_a260b2ee84cf420a948820918f23b1e1.tif
+│   │   ├── aoi_tile_a3eb4cbdc07e4af6841ee07dacf010cc.tif
+│   │   ├── aoi_tile_a443a3204d2c4aeebc797c9c97b9a9cc.tif
+│   │   ├── aoi_tile_a454698684404ff1b6a62b771e955aa5.tif
+│   │   ├── aoi_tile_a4bdbdb418044303871bc295a7581703.tif
+│   │   ├── aoi_tile_a52f4328255d44c5a8b96348ab2f1aae.tif
+│   │   ├── aoi_tile_a656ec6646a04777bdf117872bdc0d8e.tif
+│   │   ├── aoi_tile_a6792f0847ff419daac191d0e25ac524.tif
+│   │   ├── aoi_tile_a8a12faafbdf4f1a96bab8cc0d950cd9.tif
+│   │   ├── aoi_tile_a8bb2620deb54882b5bcee5e92688e75.tif
+│   │   ├── aoi_tile_a93c1bc6a1ef4e8994658cb81ad36d42.tif
+│   │   ├── aoi_tile_aa85fc51ba5f4a5a97482643a54f5d1e.tif
+│   │   ├── aoi_tile_aac753cfd662460b83c59a9a217d143e.tif
+│   │   ├── aoi_tile_abcb3b6326cd4a699a6de58fb91210ea.tif
+│   │   ├── aoi_tile_b092a3593a214a50895c05205a2c44c1.tif
+│   │   ├── aoi_tile_b11f349cf5104b91992a2993a5e0f349.tif
+│   │   ├── aoi_tile_b1dc81e0352e4cb78770185759462f7b.tif
+│   │   ├── aoi_tile_b3d66f7aa2f34e8bae3c03bdfb98b131.tif
+│   │   ├── aoi_tile_b490e5963473469aa153c8484795bb6e.tif
+│   │   ├── aoi_tile_b600924aa04a480ca6b4b137e7b916f0.tif
+│   │   ├── aoi_tile_b80496b665cc434696b6512d897f20d7.tif
+│   │   ├── aoi_tile_b86ede2be0184d988e9fd5d1c9f53ed9.tif
+│   │   ├── aoi_tile_b9ef4c45066448718f08a6e846d05ffb.tif
+│   │   ├── aoi_tile_bc400affd9964b8585ef955a7b2405ec.tif
+│   │   ├── aoi_tile_bc754ce59b164536867478a0683b7a85.tif
+│   │   ├── aoi_tile_be03501c0b3c45a7985878d3114b2036.tif
+│   │   ├── aoi_tile_becd7dc0cf8640e0b245eb48d4837074.tif
+│   │   ├── aoi_tile_bffe3ceb27fd46b89ff0c26cad7578f6.tif
+│   │   ├── aoi_tile_c1f46251b96546a5844488f92490e56d.tif
+│   │   ├── aoi_tile_c2d68d8fd3294bc49b14c0c825b03d89.tif
+│   │   ├── aoi_tile_c34d2edfc9fa42bd8a0a6e4a2e431b27.tif
+│   │   ├── aoi_tile_c39f2dba2c624357998c89d31a2ebba8.tif
+│   │   ├── aoi_tile_c4694826ac294c2a869d0a340ebd0ae1.tif
+│   │   ├── aoi_tile_c4b7b2ccf0d8452aaf67b33b2abcd923.tif
+│   │   ├── aoi_tile_c739ef19822c448aa1999df71e87cfbe.tif
+│   │   ├── aoi_tile_c7540ddf0d1f495d8574fac6002c99f8.tif
+│   │   ├── aoi_tile_c83049e01dbc47e4885930e73a0d845f.tif
+│   │   ├── aoi_tile_c89766d9641e4cefba929ce47776f112.tif
+│   │   ├── aoi_tile_ca0acf20c970488f9d77ffdbce1e5ccb.tif
+│   │   ├── aoi_tile_cbbfef7e0fcd4995ac789ee8d2e2b5b4.tif
+│   │   ├── aoi_tile_cc98c97a9faf49a389894aecfcfd0414.tif
+│   │   ├── aoi_tile_cc9d0b6b49b74246a989f58ba44de799.tif
+│   │   ├── aoi_tile_cd5888a0c0c149e0a89df48e14438dd7.tif
+│   │   ├── aoi_tile_cd71f2e7669e41d29eb72e8603499f2f.tif
+│   │   ├── aoi_tile_d4d4430835f2478799bae3eae91dfb8a.tif
+│   │   ├── aoi_tile_d5ee7ad169254fd9b2a50c9e675bbe0c.tif
+│   │   ├── aoi_tile_d62fb77c164c49f281e2dfe0843b24ad.tif
+│   │   ├── aoi_tile_d724eb0ed58c4bf68b1f266528490a78.tif
+│   │   ├── aoi_tile_d777adb0d1754db4854f7d9150d43b13.tif
+│   │   ├── aoi_tile_d7e8a6b55e204af3a0862877039f7d2c.tif
+│   │   ├── aoi_tile_d80169cf47c8457ba016eb582ee0d352.tif
+│   │   ├── aoi_tile_d841c4f7498c44c39980f8d7ee3da927.tif
+│   │   ├── aoi_tile_d89bc92f161b4299b7b9ea09f4adfd61.tif
+│   │   ├── aoi_tile_d8ab2682a1254d99a39bd4a79053eddf.tif
+│   │   ├── aoi_tile_db3b1a0864a74e72ab59466e2e66dded.tif
+│   │   ├── aoi_tile_dbbc85e441254493bdca8c686e2d6033.tif
+│   │   ├── aoi_tile_ddf1a912f49941b1800fd8d8d1e8aa8b.tif
+│   │   ├── aoi_tile_de85ab8db8c8426eaeb656dc798820da.tif
+│   │   ├── aoi_tile_dead4f4a777d4138919f190923afe6f9.tif
+│   │   ├── aoi_tile_dee84d20af8040abba2b6c197e03e625.tif
+│   │   ├── aoi_tile_defc1f12cabb4ce6b3462b2636c8db64.tif
+│   │   ├── aoi_tile_df86955d762d46009327d30d8134ed97.tif
+│   │   ├── aoi_tile_e0ffe81f940343f580aba159fad4c001.tif
+│   │   ├── aoi_tile_e289abe3de4b472b92dc940ca1bc27d2.tif
+│   │   ├── aoi_tile_e2ecb7b5f1184cb5bad02e8e52f1aa88.tif
+│   │   ├── aoi_tile_e2f24e48f4484eb8b3aa04f20841665c.tif
+│   │   ├── aoi_tile_e318339b887746fdace5eaf0c63ce3fa.tif
+│   │   ├── aoi_tile_e60408b49ecf490cb16c4072736d9fc0.tif
+│   │   ├── aoi_tile_e7ac073cc37e4183b5e2eab06c11234c.tif
+│   │   ├── aoi_tile_e80b2fc1c8bd493cae3114f1914bebb7.tif
+│   │   ├── aoi_tile_e9e97e28ce2d498a94c571c4be800e98.tif
+│   │   ├── aoi_tile_ea062e93144f44cbb72c6b63fe52d3ca.tif
+│   │   ├── aoi_tile_eb07003bb04f441fa294478de626b221.tif
+│   │   ├── aoi_tile_ed208637928c469a8c91c03e27be7ede.tif
+│   │   ├── aoi_tile_ee35f13deec44c11a3198578c62462e6.tif
+│   │   ├── aoi_tile_ee782ac544a84b158761483478fcd22c.tif
+│   │   ├── aoi_tile_ef235fc527794a4c90b30af5dee08d97.tif
+│   │   ├── aoi_tile_ef37b0dacd074c5bbafaab65c5fb19a5.tif
+│   │   ├── aoi_tile_efb14140d7a34484a8c49452151bd885.tif
+│   │   ├── aoi_tile_eff97ab036204da1ac76b389fef2bc4a.tif
+│   │   ├── aoi_tile_f007cd2233a947338372afd1618f2feb.tif
+│   │   ├── aoi_tile_f1043674701e40809e031c8682c4c22a.tif
+│   │   ├── aoi_tile_f23523513912460887cb339d47c735ee.tif
+│   │   ├── aoi_tile_f2e2bd38f5c34b22b669538812e28d49.tif
+│   │   ├── aoi_tile_f3dabe9f689e498aa6bd0395c865a02c.tif
+│   │   ├── aoi_tile_f485fe47b4664352a1e5632883e825b7.tif
+│   │   ├── aoi_tile_f6bea55608134ed6aa9a76ed592f42f6.tif
+│   │   ├── aoi_tile_f8534d3083b04e55bd199d62a548a12d.tif
+│   │   ├── aoi_tile_f8b7fbdb0f5f4f2ca60fc6728a021489.tif
+│   │   ├── aoi_tile_f8fdbc14d72341fbb52dd424758695a7.tif
+│   │   ├── aoi_tile_fbec20b2a5fb4a71bbca8bb7471f6855.tif
+│   │   ├── aoi_tile_fc47b1010f6744d1b1a8fecea9783cf6.tif
+│   │   ├── aoi_tile_fe33d47a023b413696e22327dc173e88.tif
+│   │   └── aoi_tile_fed4ab26d5af435591ea28fbaf4b4e48.tif
+│   ├── utils.py
+│   └── yolo_detector.py
+├── model=yolov8n.pt
+├── notes.txt
+├── osm_cache
+│   ├── 00a831fc180c8d6a0b81e51b6bf98d28d227b826.json
+│   ├── 0125c3a2b59d60672bf64569b51c9de624a9f7ea.json
+│   ├── 03b22cdc4ef6504de633d1eae974cbefb18f2ea5.json
+│   ├── 05303646790c3b438adaa351b93611a1641c3920.json
+│   ├── 0b1ecedf3cc8c3a6d79b4d309b54e83344e40975.json
+│   ├── 0db86705786a4cd35173697fb1e40a907376cf48.json
+│   ├── 0e462046c37c3e0b512c2e73efd084e9df07fe53.json
+│   ├── 0e4c827ac640b3234e57cf1acd00576948996566.json
+│   ├── 0e72a57fa30fa05be0db7b3e8886365b39547a36.json
+│   ├── 0ea0d9a41edcb873d48c195413f1e63d172fd13c.json
+│   ├── 100c8ab3b94cdc7d926a8e23ccb6a5f10ad8f7c9.json
+│   ├── 1171fa61ba8a6a19e1e3c4abb8a27520b4bfaae9.json
+│   ├── 11b4b0b73d115639f49a5e24a4fb4cf266d00e2f.json
+│   ├── 11d5cb44eb6fa7f5a27247187c7ad2ee547feecc.json
+│   ├── 12954e5928e7f7ad60e60343686b5010449fb205.json
+│   ├── 1462b8950cb373a99642a4fc0fe8b2672ec1ccac.json
+│   ├── 14f41612f4a3011a7be3591fe84b43e943c31b48.json
+│   ├── 152bfc57f0151470a9c8e485d59084d7a0e13832.json
+│   ├── 15e2400fbdef7f78e2eac0e56df40b1ef42b8996.json
+│   ├── 168c58729d10fe3a224ed5f5e34afe0ded527b8b.json
+│   ├── 170c1c37eff308b2b104ed1796bc240351ee79c5.json
+│   ├── 176b46323c92086d054eeb2a831ced649c2ad57d.json
+│   ├── 181cf1341a77f3ffbaeaa9a232b1a7b8128f29ac.json
+│   ├── 18756efe141fcb54da375f970a5a2aadf5482f0b.json
+│   ├── 192770972fdbe04678807b4fe29aec571391d695.json
+│   ├── 1951981b3254013183382115a73c52d703dad337.json
+│   ├── 19a281493a5cd85667922e681186b4cbcca40cd9.json
+│   ├── 1a2d564971b226d3b1611ca14cca5deb043cf41e.json
+│   ├── 1cbf7d8bafa436129a9a84f40743d66c23d9cbb1.json
+│   ├── 227775a2bd1a27c077c264a6c222bbefb252167d.json
+│   ├── 243b7f0d84b4bea959f942b24e6bdd05ee07b429.json
+│   ├── 25e18de73f39f806182dce794aeff8d24e661375.json
+│   ├── 27886089f81a20e09fdf24e8949de9ef41c25cd6.json
+│   ├── 297108006a75ab80472dceaf1dc55c2feac004ec.json
+│   ├── 2a615d5efc94d26fd1fe4df56f8f755d207d5d3b.json
+│   ├── 2a64230b35db15972783e6a796a9714bf84fe58d.json
+│   ├── 2d7ac765a157ea1925338ef8cd41c1a23517e35e.json
+│   ├── 2dc4aa7a9a366d4d74eff4a1bf48126d1e3efcf8.json
+│   ├── 31212bb73bc7633f0e680d9441b6e7644325933f.json
+│   ├── 3290e8e4aaddf000862fa2153ac6e0671d1ee16c.json
+│   ├── 33223daf5762393360ae1141441b4fbd209efb03.json
+│   ├── 333c71bd2d49c19cd6a5175ce7acaed583ecd5f9.json
+│   ├── 351203deecfa7e41462b99cead2011cc4ab2d6ac.json
+│   ├── 36f5d76c65c7b6621247c251baafa881fa2c4d87.json
+│   ├── 3785a81e33a2c57ded71695ab55174c4e769ef35.json
+│   ├── 37bba515d975692581fb94dd1193ce1d5a685fc9.json
+│   ├── 38618363ee72b38e340dfab59372ba7b55be89d6.json
+│   ├── 3872a30c40229959cac6fbf3e65512e1d27b43be.json
+│   ├── 3a76b60fd966d6b033a217d714b0e13a44b7e6b0.json
+│   ├── 3c5b722edca55ad8717670d22941d82636e3fb79.json
+│   ├── 3ce8965e3c026e94b97fc433c6f43481426c7288.json
+│   ├── 3d89cf05d242c3e039072f44944386ffe0c1fba2.json
+│   ├── 3e416b31cd0ecd2d382922586b845b16a4decdbc.json
+│   ├── 3e5e885dfaf9ed03f52029cac597f63bcd1d90ff.json
+│   ├── 3f65c2cdafcf2d3a849286524e7a6c0043c51500.json
+│   ├── 40c2cc071b45c242e8e1fd0fe3518490df6e0479.json
+│   ├── 4122908abcfae81507b21791c864f8d06c1cf690.json
+│   ├── 416d3ac680317eccedfc4a4fd3c5a005a2404b9e.json
+│   ├── 42789029a170aa86ccff19582d35a9d2813fece0.json
+│   ├── 441b27e14bd3463b9609d5a1db0110b02c4ab0eb.json
+│   ├── 47815e685e8d81f2500e01a1beec6da583450ce3.json
+│   ├── 48c8734fbe56519d68c23023a172ad9146530f9a.json
+│   ├── 49a9a4bf5d1833b16212cebb4cadbc9ce89be397.json
+│   ├── 4a60cc66493682d7dbdc6aa6cc2a411e795aa494.json
+│   ├── 4ae662092b70af6bcedf1e956d2d2b10fb4d09ac.json
+│   ├── 4c60441d4c84d4ec7bd31110a196909390f1f5e9.json
+│   ├── 4e938a15ebd18cf326b956a028de30ce8a4b6386.json
+│   ├── 4f697323f8239ed402cfdea6ce247431687bcf92.json
+│   ├── 4faf369877ed24fd328ac3b57ff159748b8b5fc8.json
+│   ├── 5115aea20156509115b50e5bc323200746833750.json
+│   ├── 522f3e5fb42e482665c930012e94ac13cee7bd4a.json
+│   ├── 534e10fba5f8b0343c6924f0d9bf0e95dc6bf1c4.json
+│   ├── 564a66d2f5b396ac148ad8278339ed6c95124933.json
+│   ├── 56630595a154da54fc62943ace0328662bf7b902.json
+│   ├── 5710f18577cb83649a34b961a407dde13ee0c737.json
+│   ├── 574ecff6c30dbbfca0e9a6aebb45678cd949da2e.json
+│   ├── 5b8c25ca659b4dc0e80ec110c007e3e10e0b74c4.json
+│   ├── 5c3219aa04bbea2753767c2a4761bb4b7ef19c26.json
+│   ├── 5c42af58d7efcf35e0977781ba3c56a8df97e406.json
+│   ├── 5d1ef2245d6a3645cb45d146fb77b27d4d2f9aa7.json
+│   ├── 5d5c9b137b9277c13befca16cf5ba270368026ad.json
+│   ├── 5d9eac6cdb6813f25d76cea63270c7c20549db54.json
+│   ├── 5eb3d1531b65855e4a1b75f25d16c2da57cefd33.json
+│   ├── 609bf9c19a7e9d66951f73af4c07a1894b6447b4.json
+│   ├── 612e710a3d7afbe8c3042301ca17b9a2cb12770e.json
+│   ├── 62a9ed34e88d4e93fdedbdfbce04815372c7a250.json
+│   ├── 64163bef77c2cc279a6cc657ca753e48fe3d4379.json
+│   ├── 64272ece812c6196cf81aab1284ee89d9fd2c6ac.json
+│   ├── 6462323f2b6185f93f3294c408491bdfe03db16a.json
+│   ├── 6467bedb95c824210b526dbced2a7f6949589710.json
+│   ├── 6494a6238432b4b07df7a8e21df22d9d30d7e864.json
+│   ├── 64ec322becc5d81dc62072cc7a71581c2c31c7a0.json
+│   ├── 64eeda69b59e7829088ab48988df5b3949fd1d58.json
+│   ├── 66982f0e3218a55d8bdf3ece82ea32f1fc094120.json
+│   ├── 66b38b99c94b3b5aa2c814d224d2ce53861c2c0d.json
+│   ├── 6792a8c07b7a0da2072b3e674143c7f6452191e3.json
+│   ├── 67fd1495c0e6ef54811ec1428db6828cf4c27470.json
+│   ├── 680abdd359fef792fa0a8cdffa3bfef7e6ccb5df.json
+│   ├── 6c0b2c4c799082c331e4abd4b4dc41c6b05a4144.json
+│   ├── 6c3027b35d0675abf9013e7423adfd5d74d48d37.json
+│   ├── 6e13f93b0b6e1dcacefb217e918c2cb832a7846e.json
+│   ├── 6f143adcd63b3e90af722d9bf71c7d1d2c69232a.json
+│   ├── 6fcba27b54f9f0e942aa080dc7dbbd20fa6b10c8.json
+│   ├── 70f5f23a8b22b00e20ed9943c4f169b90ce533c2.json
+│   ├── 71759beeada8d7bd44243974e6d8079ecdaf11d0.json
+│   ├── 717facf0adf9101b53c65aef39e19ab7c4369634.json
+│   ├── 71d0b82c08cf1d93c245d0bf39dfd0d8ada092f9.json
+│   ├── 723fb5c1333c18f10ce1618a66ff57525ece89af.json
+│   ├── 73b7548f4c4429ed5714e502bdbb4768d4da095a.json
+│   ├── 73feaf02ffba54f9a5cb2c562940d9713236c1d3.json
+│   ├── 74c6d9b1be40ab6660ade255f6c6514be6975069.json
+│   ├── 7612571ac2f78b14befb14da61424ba8e2b6eac4.json
+│   ├── 77d5cb835d940bf82023cd2cc7be39513b90ff35.json
+│   ├── 7879e1e79270533878b9b3f3d8769ec5b310dd20.json
+│   ├── 7938804d3ec8ad815480f68c2c8e291f266358dc.json
+│   ├── 79f6b3bdae4acb908eb57595aa1058b46afa4d14.json
+│   ├── 7bb1beda1d171b2771d62d0bd0d683a673108190.json
+│   ├── 7bec6804f0aa9426f060ec54422baade6dd422c8.json
+│   ├── 7d2c36c20569c85467377e2fb398073c4d9be073.json
+│   ├── 7e3045bd16f147f934d85d14f914bf4655d16a71.json
+│   ├── 7ebc21d501cc766b3e737a2bab341a94bd26679a.json
+│   ├── 7f67534884e8a98d55ba5e24b59adfdd4e88e22f.json
+│   ├── 7fb93752f450a4e96ca5d90ddbbfc5048033c2c5.json
+│   ├── 80abacdd3f2ff88457c96c625c44076ac3172f20.json
+│   ├── 80b50ef4ea913f968403e07539348ea2a115173f.json
+│   ├── 80f240e5316baaa4b65de7d896a3821939ca8f03.json
+│   ├── 83196505a4259b2ee20c49b62c60e152bea9b70d.json
+│   ├── 83dd8277c0bb6c2b232e5e22b8911ed07024d3d1.json
+│   ├── 84acd580415970af067018bee9ac04fefe61dfe4.json
+│   ├── 856be7b68d63533495fce0e8dabc4210fe96d1f0.json
+│   ├── 85f29127eb5b8fd36fd4719d6923f99e8cacc5f1.json
+│   ├── 86dea39a1c2c9b621f3577538b1ca44f464612b1.json
+│   ├── 8715f7351637f2b9ec95703a70ac14d2a2e3eae3.json
+│   ├── 873e3ae646d3154252d6c3ab256ecfbb7d534b39.json
+│   ├── 89eaed03b50cdcf61090ae1dd47feb6112871b0c.json
+│   ├── 8add9e43153d8c2a984f452b64515e2320c00aa7.json
+│   ├── 8ca0ab4d67c565f33743ce66d2337f2e56262a90.json
+│   ├── 8e616e3d7ddc5206763c4abaca15ab63b29517a6.json
+│   ├── 8fa55c8d6509cfac056107f6ff38ef70cb58af9c.json
+│   ├── 91e22d904e346d2b45dcc35c937e9889e068b22d.json
+│   ├── 925af157c43f8e363d4b5fd0d26f647bc12dd1fb.json
+│   ├── 94ae2695668c721b2d5ad82e4adb04a692936f31.json
+│   ├── 95032c39b5af98b25d88c20cb192677f403fdf93.json
+│   ├── 9558704aef1420dd40032208462da9cb1046ea8d.json
+│   ├── 95a34e9eacfce10eccf977e1c7c201237bf9e4cc.json
+│   ├── 9653a595a2e62a0a928183d8e19c7c46b2fd24e2.json
+│   ├── 97148817831879af23f9976e1771655040fade15.json
+│   ├── 9763326d861e955f0c6aeba39c17610baa796da7.json
+│   ├── 98fc53a9a232b3a91ee3a4141acdb0b9a6259083.json
+│   ├── 992bab8b6f4012ad37ab5a35b41a92c83c6665a1.json
+│   ├── 9d598f1ff2de548928d8ae8f38a3ad9f0286da24.json
+│   ├── 9e5df458bd1d534f965cef29aa973c5da4db26ca.json
+│   ├── 9e7d6011bd488f3f98188570195bff26af5b2121.json
+│   ├── 9fce8a1adb96782fc358a183984f7efacab92d14.json
+│   ├── a0886dfcf90fefb64bf58ab98e9863192a964f57.json
+│   ├── a0e9d4dc4c89b7e48e660a3f9f610c2a0e80bd7b.json
+│   ├── a110dab5dd23e0311f6eceb0e76f6bb4a4eb2bc2.json
+│   ├── a1278b66d77bce10750366cefc6b357f33aa76ba.json
+│   ├── a34e03069a6cf9fd43e51678a40722a5618a2a88.json
+│   ├── a3e787cf482c881af2a9ae8dee9aeaa9cb3e6a41.json
+│   ├── a4c1972df50d4ccdd831b753ab0fd311c81f61dc.json
+│   ├── a4ddf3c0cbcddf6009efc04100f277689aee77ad.json
+│   ├── a6553f3aa1fde7f07171c02866d4c143b55a75e4.json
+│   ├── a7e49cd27f593f4c3282d9aedae445f7f6b16424.json
+│   ├── a8243d27b145361d2179408d14673fd8c173b25d.json
+│   ├── a8582e687b9d21d2374e2340cca9a0d9381bc01b.json
+│   ├── abb6c81dbd50c9ec9208c88bd8d706be0b70fdb3.json
+│   ├── ac9968a0200092fc6c153db9d215db6d08acd655.json
+│   ├── acaacd9280b50ea16ae0b4638798a1eb837633a0.json
+│   ├── ad9d291614c9475bde6bbbff538922fd28535b5b.json
+│   ├── af1fdcd48be014689c64344d521aaee9da6a11f6.json
+│   ├── af671d5c925981219178f62b322f48ac54dd7d8d.json
+│   ├── b1d427161a7497c12b14b86fb6bba1c8c831e631.json
+│   ├── b2be2823513683094a3c1e6604b4fce638ccb2ef.json
+│   ├── b3036516486058c399cebe7af67ef6b4f29cf38e.json
+│   ├── b3c6ab0a107a12c389790f734e112da0afe13ac7.json
+│   ├── b42e13cb960ce2e53d9601051ea6ce39be115e0a.json
+│   ├── b5cf30f0c819aa0e422cf9f266f627eee174766d.json
+│   ├── b8d883d5242411aa2013316b18b597a8fa51adff.json
+│   ├── b8ea1093259dccdcacab9cf2060b8c0f91c24486.json
+│   ├── b9900b1947a4706838320600a995d023a03a8637.json
+│   ├── babfec34c08fc131c50e0c36ec262006bd13b11d.json
+│   ├── bc79dc4e5e59ec7d4f7116507ff8e0c40045e609.json
+│   ├── be62c2e9db569f45247c99e6d3977cb5ea8eb3bd.json
+│   ├── bec51512a2d579fb69a29f563bee5e9d7c56e7d1.json
+│   ├── c001330ecc9d743d04238eb6a7343f65ad7a13db.json
+│   ├── c01cafd9f036d60f9a50f5c4d127a8f6b80964ad.json
+│   ├── c062bb6ec21fdc7f6461ca2fb194097cc886618d.json
+│   ├── c1f1eac6f71aab302d8bc2540e62b5fdf62bf3d6.json
+│   ├── c23db617cb78f50caa04e850b440e2aaf2b93e09.json
+│   ├── c6a591840c89ae742e5f592194d272b6f387bcb4.json
+│   ├── c6aed04fa0fd7301e7c5ee48ce332743eaa5fd8a.json
+│   ├── c6b147b6704077f23156d72547f26c9e1158f2a2.json
+│   ├── c709ac3a4747f7ef6c10ae1a0435594a8c79c64a.json
+│   ├── c7a45e43a03526ead897473bb11e10280412d15e.json
+│   ├── c8a703b9b2cba5dbd1dfa6e586209129d0517728.json
+│   ├── c8b13c4aa549c5dae2d5c5aff1f4068c3adaefe6.json
+│   ├── c915b39c5794e5a3370149b78a8c16416477d4a3.json
+│   ├── c9891125b66d41fb4bbb11373ad944e329fdd02c.json
+│   ├── cb6a1105ba920c4dc20ce1404894292514fd34d8.json
+│   ├── cbb3ccf0ba01e4926ddc807671aff7e660757d50.json
+│   ├── cc97af419589c1fe7d08683b949b84b72e7e8439.json
+│   ├── ce0d8b7271e127c2b76a0f2295f5a7b6da2fc741.json
+│   ├── cedd9ba79d912b437515710f12259e73af29887c.json
+│   ├── cee20f69b4ad1a164b3a85b544d45e20af6648b8.json
+│   ├── cf2ba2cbf16ff620113b43837a0a7e5b96867a1b.json
+│   ├── d002523b2da804504d375faf3b9f7f2bb20fc2ee.json
+│   ├── d047069587d863a68d5a142c3bc6d486c7d4765b.json
+│   ├── d0e088647e8a01ea5a3aa1c945373c6bcef0a27a.json
+│   ├── d1ff40a0c1672556a90ab0ca35d97d4216cbd1ea.json
+│   ├── d32400b70372324a7bd8ac1265571a87c1ec1ce9.json
+│   ├── d3f8973849a0f552db641f47d4b91f65bf02339a.json
+│   ├── d45a2a366ece9c96b67186e33001e9568aae98d2.json
+│   ├── d559324c9a024250d67d812bbe8753f20c821586.json
+│   ├── d85e184d54bacd9d93f66f895d6cf873e6a34521.json
+│   ├── d8d8cf1b9d21c92296b1a53854e0d8c965e4320f.json
+│   ├── d9541cff71e183cfb2852812d04668177f47a604.json
+│   ├── da1ae6987142b0177af3a24c474f2e74254e3846.json
+│   ├── de380b3ce8f56e596c8e4bba3f47167e17395731.json
+│   ├── df4f983a1549c7f7a6f3089ca4403e5a23c73a1e.json
+│   ├── df70708ae5107281ea186a4015cc0b86c70c8f2e.json
+│   ├── e036db344d66650d12ee6f49233fba7ec8ee7413.json
+│   ├── e0cca75d021c2a046f7b4ac7c389b170477727bc.json
+│   ├── e1e5f0fdf7648bf622ce26b27e43a85111b1ff67.json
+│   ├── e22f673314519bbc22fd3da7fa9ef55f9289ca74.json
+│   ├── e2fa926f974eac1921ba90ac9acac31a3c820902.json
+│   ├── e30e7aed19e90bcf72e2cb3ff2ed19cfd75a882b.json
+│   ├── e31eacbd7f4f12ac7c79891c640e6427db360290.json
+│   ├── e77680f9a626cc90265cde6201a6648b1254cd51.json
+│   ├── e795caf1e37fced09eca85e2a1065f6262854eb5.json
+│   ├── eadf942a95bd2dfec0d334f4c09e45afefc70159.json
+│   ├── ed4d2bf61eadd2ce9aab1646408a3cd75d61e8d9.json
+│   ├── ed63ca00310cb6e946b77b3e7e16c10cef1c983e.json
+│   ├── ee972005aa2989a078d2c44fa263ba7d6b355f89.json
+│   ├── eeadad204abdd331da33b4dd0215287625d27dad.json
+│   ├── ef49beb77e05dc0200c6df580d2c73c42d59e6e2.json
+│   ├── efdf23236e2d420b249f42b0b6877ea18111405b.json
+│   ├── f10111b2a5fc19305926d0f8efa6b5f1a6aeb00a.json
+│   ├── f1bc3d523ebe39cbbb0add261ffd84cad919c5ac.json
+│   ├── f2383f55e06ea1107fd021b19f8d79775f9b2193.json
+│   ├── f35011e42f8e9981fcb7cb531ca490e36f6b685d.json
+│   ├── f3af8598e7809562cb3846d1d5691bcad872185b.json
+│   ├── f3ef0123355227477d333815d3ccc0cdcdd8cc8b.json
+│   ├── f441302b83355686ac529058e0471f7fec778dac.json
+│   ├── f4983a0f7b981b9e6b3f3c9a8d2f82623f72a485.json
+│   ├── f64ae91a5ac9b23838550edc16c4ebd3ed266211.json
+│   ├── f65849d919c97974e32ed80ed5024713c228ad07.json
+│   ├── f716bc23c39b1fd05a79b794938b799655fd8512.json
+│   ├── f8a22112b1f8030801ed8b82417866a84a6a0eb6.json
+│   ├── f8b215bd347a318c474e878360dc879741b20536.json
+│   ├── f930ad66f18154fe008e1898067c712fbd2ad633.json
+│   ├── fb3491d56e45a1ef651ef5ea572af57efcfdd51a.json
+│   ├── fc4f10a92699b8aee5f9bff8b8b25f10099a7a17.json
+│   ├── fc614b3cbfd06756467be62998d212c446934d98.json
+│   ├── fe9d29d85e9315c390b847ce13b420781abbccbe.json
+│   └── feacfd52b91e3b6daf90402fb0cc76e4724f1d1a.json
+├── readme.md
+├── requirements.txt
+├── runs
+│   └── detect
+│       ├── train
+│       │   ├── args.yaml
+│       │   └── weights
+│       ├── train10
+│       │   ├── BoxF1_curve.png
+│       │   ├── BoxPR_curve.png
+│       │   ├── BoxP_curve.png
+│       │   ├── BoxR_curve.png
+│       │   ├── args.yaml
+│       │   ├── confusion_matrix.png
+│       │   ├── confusion_matrix_normalized.png
+│       │   ├── labels.jpg
+│       │   ├── results.csv
+│       │   ├── results.png
+│       │   ├── train_batch0.jpg
+│       │   ├── train_batch1.jpg
+│       │   ├── train_batch2.jpg
+│       │   ├── val_batch0_labels.jpg
+│       │   ├── val_batch0_pred.jpg
+│       │   ├── val_batch1_labels.jpg
+│       │   ├── val_batch1_pred.jpg
+│       │   ├── val_batch2_labels.jpg
+│       │   ├── val_batch2_pred.jpg
+│       │   └── weights
+│       ├── train11
+│       │   ├── BoxF1_curve.png
+│       │   ├── BoxPR_curve.png
+│       │   ├── BoxP_curve.png
+│       │   ├── BoxR_curve.png
+│       │   ├── args.yaml
+│       │   ├── confusion_matrix.png
+│       │   ├── confusion_matrix_normalized.png
+│       │   ├── labels.jpg
+│       │   ├── results.csv
+│       │   ├── results.png
+│       │   ├── train_batch0.jpg
+│       │   ├── train_batch1.jpg
+│       │   ├── train_batch2.jpg
+│       │   ├── val_batch0_labels.jpg
+│       │   ├── val_batch0_pred.jpg
+│       │   ├── val_batch1_labels.jpg
+│       │   ├── val_batch1_pred.jpg
+│       │   ├── val_batch2_labels.jpg
+│       │   ├── val_batch2_pred.jpg
+│       │   └── weights
+│       ├── train2
+│       │   ├── args.yaml
+│       │   ├── labels.jpg
+│       │   ├── train_batch0.jpg
+│       │   ├── train_batch1.jpg
+│       │   ├── train_batch2.jpg
+│       │   └── weights
+│       ├── train3
+│       │   ├── BoxF1_curve.png
+│       │   ├── BoxPR_curve.png
+│       │   ├── BoxP_curve.png
+│       │   ├── BoxR_curve.png
+│       │   ├── args.yaml
+│       │   ├── confusion_matrix.png
+│       │   ├── confusion_matrix_normalized.png
+│       │   ├── labels.jpg
+│       │   ├── results.csv
+│       │   ├── results.png
+│       │   ├── train_batch0.jpg
+│       │   ├── train_batch1.jpg
+│       │   ├── train_batch2.jpg
+│       │   ├── train_batch4120.jpg
+│       │   ├── train_batch4121.jpg
+│       │   ├── train_batch4122.jpg
+│       │   ├── val_batch0_labels.jpg
+│       │   ├── val_batch0_pred.jpg
+│       │   ├── val_batch1_labels.jpg
+│       │   ├── val_batch1_pred.jpg
+│       │   ├── val_batch2_labels.jpg
+│       │   ├── val_batch2_pred.jpg
+│       │   └── weights
+│       ├── train4
+│       │   ├── BoxF1_curve.png
+│       │   ├── BoxPR_curve.png
+│       │   ├── BoxP_curve.png
+│       │   ├── BoxR_curve.png
+│       │   ├── args.yaml
+│       │   ├── confusion_matrix.png
+│       │   ├── confusion_matrix_normalized.png
+│       │   ├── labels.jpg
+│       │   ├── results.csv
+│       │   ├── results.png
+│       │   ├── train_batch0.jpg
+│       │   ├── train_batch1.jpg
+│       │   ├── train_batch2.jpg
+│       │   ├── train_batch4160.jpg
+│       │   ├── train_batch4161.jpg
+│       │   ├── train_batch4162.jpg
+│       │   ├── val_batch0_labels.jpg
+│       │   ├── val_batch0_pred.jpg
+│       │   ├── val_batch1_labels.jpg
+│       │   ├── val_batch1_pred.jpg
+│       │   ├── val_batch2_labels.jpg
+│       │   ├── val_batch2_pred.jpg
+│       │   └── weights
+│       ├── train5
+│       │   ├── BoxF1_curve.png
+│       │   ├── BoxPR_curve.png
+│       │   ├── BoxP_curve.png
+│       │   ├── BoxR_curve.png
+│       │   ├── args.yaml
+│       │   ├── confusion_matrix.png
+│       │   ├── confusion_matrix_normalized.png
+│       │   ├── labels.jpg
+│       │   ├── results.csv
+│       │   ├── results.png
+│       │   ├── train_batch0.jpg
+│       │   ├── train_batch1.jpg
+│       │   ├── train_batch2.jpg
+│       │   ├── val_batch0_labels.jpg
+│       │   ├── val_batch0_pred.jpg
+│       │   └── weights
+│       ├── train6
+│       │   ├── BoxF1_curve.png
+│       │   ├── BoxPR_curve.png
+│       │   ├── BoxP_curve.png
+│       │   ├── BoxR_curve.png
+│       │   ├── args.yaml
+│       │   ├── confusion_matrix.png
+│       │   ├── confusion_matrix_normalized.png
+│       │   ├── labels.jpg
+│       │   ├── results.csv
+│       │   ├── results.png
+│       │   ├── train_batch0.jpg
+│       │   ├── train_batch1.jpg
+│       │   ├── train_batch2.jpg
+│       │   ├── val_batch0_labels.jpg
+│       │   ├── val_batch0_pred.jpg
+│       │   ├── val_batch1_labels.jpg
+│       │   ├── val_batch1_pred.jpg
+│       │   └── weights
+│       ├── train7
+│       │   ├── BoxF1_curve.png
+│       │   ├── BoxPR_curve.png
+│       │   ├── BoxP_curve.png
+│       │   ├── BoxR_curve.png
+│       │   ├── args.yaml
+│       │   ├── confusion_matrix.png
+│       │   ├── confusion_matrix_normalized.png
+│       │   ├── labels.jpg
+│       │   ├── results.csv
+│       │   ├── results.png
+│       │   ├── train_batch0.jpg
+│       │   ├── train_batch1.jpg
+│       │   ├── train_batch2.jpg
+│       │   ├── val_batch0_labels.jpg
+│       │   ├── val_batch0_pred.jpg
+│       │   ├── val_batch1_labels.jpg
+│       │   ├── val_batch1_pred.jpg
+│       │   └── weights
+│       ├── train8
+│       │   ├── BoxF1_curve.png
+│       │   ├── BoxPR_curve.png
+│       │   ├── BoxP_curve.png
+│       │   ├── BoxR_curve.png
+│       │   ├── args.yaml
+│       │   ├── confusion_matrix.png
+│       │   ├── confusion_matrix_normalized.png
+│       │   ├── labels.jpg
+│       │   ├── results.csv
+│       │   ├── results.png
+│       │   ├── train_batch0.jpg
+│       │   ├── train_batch1.jpg
+│       │   ├── train_batch2.jpg
+│       │   ├── val_batch0_labels.jpg
+│       │   ├── val_batch0_pred.jpg
+│       │   ├── val_batch1_labels.jpg
+│       │   ├── val_batch1_pred.jpg
+│       │   └── weights
+│       └── train9
+│           ├── BoxF1_curve.png
+│           ├── BoxPR_curve.png
+│           ├── BoxP_curve.png
+│           ├── BoxR_curve.png
+│           ├── args.yaml
+│           ├── confusion_matrix.png
+│           ├── confusion_matrix_normalized.png
+│           ├── labels.jpg
+│           ├── results.csv
+│           ├── results.png
+│           ├── train_batch0.jpg
+│           ├── train_batch1.jpg
+│           ├── train_batch2.jpg
+│           ├── val_batch0_labels.jpg
+│           ├── val_batch0_pred.jpg
+│           ├── val_batch1_labels.jpg
+│           ├── val_batch1_pred.jpg
+│           ├── val_batch2_labels.jpg
+│           ├── val_batch2_pred.jpg
+│           └── weights
+├── scripts
+│   ├── generate_tiles.sh
+│   └── prepare_imagery.sh
+├── segment-anything
+│   ├── CODE_OF_CONDUCT.md
+│   ├── CONTRIBUTING.md
+│   ├── LICENSE
+│   ├── README.md
+│   ├── assets
+│   │   ├── masks1.png
+│   │   ├── masks2.jpg
+│   │   ├── minidemo.gif
+│   │   ├── model_diagram.png
+│   │   ├── notebook1.png
+│   │   └── notebook2.png
+│   ├── demo
+│   │   ├── README.md
+│   │   ├── configs
+│   │   │   └── webpack
+│   │   ├── package.json
+│   │   ├── postcss.config.js
+│   │   ├── src
+│   │   │   ├── App.tsx
+│   │   │   ├── assets
+│   │   │   ├── components
+│   │   │   └── index.tsx
+│   │   ├── tailwind.config.js
+│   │   └── tsconfig.json
+│   ├── linter.sh
+│   ├── notebooks
+│   │   ├── automatic_mask_generator_example.ipynb
+│   │   ├── images
+│   │   │   ├── dog.jpg
+│   │   │   ├── groceries.jpg
+│   │   │   └── truck.jpg
+│   │   ├── onnx_model_example.ipynb
+│   │   └── predictor_example.ipynb
+│   ├── scripts
+│   │   ├── amg.py
+│   │   └── export_onnx_model.py
+│   ├── segment_anything
+│   │   ├── __init__.py
+│   │   ├── automatic_mask_generator.py
+│   │   ├── build_sam.py
+│   │   ├── modeling
+│   │   │   ├── __init__.py
+│   │   │   ├── common.py
+│   │   │   ├── image_encoder.py
+│   │   │   ├── mask_decoder.py
+│   │   │   ├── prompt_encoder.py
+│   │   │   ├── sam.py
+│   │   │   └── transformer.py
+│   │   ├── predictor.py
+│   │   └── utils
+│   │       ├── __init__.py
+│   │       ├── amg.py
+│   │       ├── onnx.py
+│   │       └── transforms.py
+│   ├── setup.cfg
+│   └── setup.py
+├── start.sh
+├── static
+│   └── css
+├── templates
+│   ├── index-bak.html.21.12.2025
+│   ├── index.html
+│   └── index.html-tofix
+├── test
+│   └── index.html
+├── test.py
+├── testimage.png
+├── train_yolo.sh
+├── training_data
+│   ├── footprints
+│   ├── heights
+│   └── shadows
+├── tree.txt
+├── venv
+│   ├── bin
+│   │   ├── Activate.ps1
+│   │   ├── activate
+│   │   ├── activate.csh
+│   │   ├── activate.fish
+│   │   ├── f2py
+│   │   ├── fio
+│   │   ├── flask
+│   │   ├── httpx
+│   │   ├── isympy
+│   │   ├── mercantile
+│   │   ├── morecantile
+│   │   ├── normalizer
+│   │   ├── numpy-config
+│   │   ├── pip
+│   │   ├── pip3
+│   │   ├── pip3.11
+│   │   ├── proton
+│   │   ├── proton-viewer
+│   │   ├── pyproj
+│   │   ├── python
+│   │   ├── python3
+│   │   ├── python3.11
+│   │   ├── rio
+│   │   ├── torchfrtrace
+│   │   ├── torchrun
+│   │   └── trimesh
+│   ├── include
+│   │   └── python3.11
+│   ├── lib
+│   │   └── python3.11
+│   │       └── site-packages
+│   ├── lib64
+│   │   └── python3.11
+│   │       └── site-packages
+│   ├── pyvenv.cfg
+│   └── share
+│       └── man
+│           └── man1
+├── yolo11n.pt
+├── yolo_dataset_prepare.py
+├── yolo_detector.log
+└── yolov8n.pt
+
+99 directories, 1441 files

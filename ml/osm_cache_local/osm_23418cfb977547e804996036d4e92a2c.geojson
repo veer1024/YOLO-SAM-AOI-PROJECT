@@ -1,0 +1,11 @@
+{
+"type": "FeatureCollection",
+"name": "osm_23418cfb977547e804996036d4e92a2c",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "element": "way", "id": 1086096134, "building": "hangar" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 73.0839887, 33.6175583 ], [ 73.0840732, 33.6174546 ], [ 73.0842654, 33.6175633 ], [ 73.0841809, 33.617667 ], [ 73.0839887, 33.6175583 ] ] ] } },
+{ "type": "Feature", "properties": { "element": "way", "id": 1086096135, "building": "hangar" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 73.0832716, 33.6172134 ], [ 73.0833561, 33.6171097 ], [ 73.0835483, 33.6172184 ], [ 73.0834638, 33.6173221 ], [ 73.0832716, 33.6172134 ] ] ] } },
+{ "type": "Feature", "properties": { "element": "way", "id": 1086096136, "building": "hangar" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 73.0852047, 33.6168177 ], [ 73.0853259, 33.6168919 ], [ 73.0851883, 33.6170478 ], [ 73.0850671, 33.6169736 ], [ 73.0852047, 33.6168177 ] ] ] } },
+{ "type": "Feature", "properties": { "element": "way", "id": 1086096137, "building": "hangar" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 73.0857363, 33.6162617 ], [ 73.0858576, 33.6163359 ], [ 73.08572, 33.6164918 ], [ 73.0855988, 33.6164177 ], [ 73.0857363, 33.6162617 ] ] ] } }
+]
+}

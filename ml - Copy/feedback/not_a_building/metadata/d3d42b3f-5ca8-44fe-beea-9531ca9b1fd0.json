@@ -1,0 +1,34 @@
+{
+  "id": "d3d42b3f-5ca8-44fe-beea-9531ca9b1fd0",
+  "type": "not_a_building",
+  "timestamp": "2025-12-24T16:36:37.436076+00:00",
+  "image": "ml/feedback/not_a_building/images/d3d42b3f-5ca8-44fe-beea-9531ca9b1fd0.png",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          73.09789359569551,
+          33.61375261623371
+        ],
+        [
+          73.09837639331819,
+          33.613944715296284
+        ],
+        [
+          73.09863924980165,
+          33.6133862866021
+        ],
+        [
+          73.09823155403139,
+          33.61327013297917
+        ],
+        [
+          73.09789359569551,
+          33.61375261623371
+        ]
+      ]
+    ]
+  },
+  "mask": "ml/feedback/not_a_building/masks/d3d42b3f-5ca8-44fe-beea-9531ca9b1fd0.png"
+}

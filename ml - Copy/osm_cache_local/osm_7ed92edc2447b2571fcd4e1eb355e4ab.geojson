@@ -1,0 +1,10 @@
+{
+"type": "FeatureCollection",
+"name": "osm_7ed92edc2447b2571fcd4e1eb355e4ab",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "element": "way", "id": 587475581, "aeroway": "hangar", "building": "yes", "name": null }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 73.0968998, 33.6114251 ], [ 73.0972066, 33.6111546 ], [ 73.0968457, 33.6108804 ], [ 73.0965209, 33.611196 ], [ 73.0968998, 33.6114251 ] ] ] } },
+{ "type": "Feature", "properties": { "element": "way", "id": 587475591, "aeroway": "hangar", "building": "yes", "name": null }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 73.0950572, 33.6129956 ], [ 73.0952901, 33.6126662 ], [ 73.0947064, 33.6124032 ], [ 73.0944544, 33.6127485 ], [ 73.0950572, 33.6129956 ] ] ] } },
+{ "type": "Feature", "properties": { "element": "way", "id": 587475594, "aeroway": "terminal", "building": "yes", "name": "VVIP Terminal" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 73.0935043, 33.6124661 ], [ 73.0940772, 33.6127441 ], [ 73.0939058, 33.6129995 ], [ 73.0933442, 33.6127253 ], [ 73.0935043, 33.6124661 ] ] ] } }
+]
+}
