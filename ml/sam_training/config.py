@@ -22,7 +22,7 @@ DATASET_JSON = "ml/feedback/feedback_dataset_clean.json"
 
 BATCH_SIZE = 8
 LR = 5e-5
-EPOCHS = 18
+EPOCHS = 16
 
 DEVICE = "cuda"
 SAVE_PATH = "ml/sam_training/checkpoints/sam_decoder_finetuned.pth"

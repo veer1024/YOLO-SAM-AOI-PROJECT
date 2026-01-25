@@ -455,11 +455,12 @@ def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens"):
     High-recall YOLO ensemble for satellite roofs.
     Designed for ~0.5 m/px imagery and container-like buildings.
     """
+    #LARGE_AOI_AREA_PX = 1200 * 1200
+    LARGE_AOI_AREA_PX = 450 * 450
 
-    
-    logging.info(f"[YOLO DBG] img_hw=({H},{W}) area={H*W} LARGE_AOI_AREA_PX={LARGE_AOI_AREA_PX}")
     H, W = img_rgb.shape[:2]
     img_area = H * W
+    logging.info(f"[YOLO DBG] img_hw=({H},{W}) area={H*W} LARGE_AOI_AREA_PX={LARGE_AOI_AREA_PX}")
 
     runs = []
 
@@ -532,7 +533,6 @@ def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens"):
     # EXTRA RECALL RUNS (ONLY for large AOIs)
     # =========================================================
 
-    LARGE_AOI_AREA_PX = 1200 * 1200
     #LARGE_AOI_AREA_PX = 700 * 700
     if img_area >= LARGE_AOI_AREA_PX:
 
@@ -601,7 +601,7 @@ def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens"):
     final_boxes = merge_boxes_ensemble(
         runs,
         iou_thr=0.45,        # slightly looser → preserves close roofs
-        min_votes=1,         # you already verified this is safe
+        min_votes=2,         # you already verified this is safe
         conf_strong=0.20,    # gentle confidence floor
         wbf=True,
         image_wh=(W, H),
@@ -632,7 +632,7 @@ def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens"):
         final_boxes = merge_boxes_ensemble(
             runs + [r],
             iou_thr=0.45,
-            min_votes=1,
+            min_votes=2,
             conf_strong=0.20,
             wbf=True,
             image_wh=(W, H),

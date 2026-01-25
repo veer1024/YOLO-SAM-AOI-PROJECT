@@ -1083,7 +1083,7 @@ map3d.on("mousemove", "building-shadows", e => {
       <div style="font-size:12px;color:#ff3333">
         <b>${f.properties.id}</b><br/>
         Shadow length: ${Number(f.properties.shadow_len).toFixed(2)} m<br/>
-        Azimuth: ${Number(f.properties.shadow_azimuth).toFixed(1)}°
+        Azimuth: ${Number(f.properties.sun_azimuth).toFixed(1)}°
       </div>
     `)
     .addTo(map3d);

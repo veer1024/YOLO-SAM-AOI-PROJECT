@@ -158,7 +158,7 @@ sam.to(device=device, dtype=torch.float32)
 sam.eval()
 
 #decoder_ckpt = "ml/sam_training/checkpoints/sam_decoder_finetuned.pth.epoch12.pth"
-decoder_ckpt="SAM_TRAINED_MODEL/sam_decoder_finetuned.pth.epoch10.pth"
+decoder_ckpt="SAM_TRAINED_MODEL/sam_decoder_finetuned.pth.epoch16.pth"
 sam.mask_decoder.load_state_dict(torch.load(decoder_ckpt, map_location=device))
 logging.info("Fine-tuned SAM decoder loaded")
 
@@ -485,56 +485,457 @@ def osm_height_from_tags(osm_row):
 
 
 
-def estimate_height_from_shadow(poly, img_rgb,transform, raster_crs):
-    """
-    Estimate building height from shadow length using solar geometry.
-    poly        : building polygon in raster CRS
-    img_rgb     : RGB numpy image (H,W,3)
-    raster_crs  : CRS of raster (used only for reprojection safety)
+# def estimate_height_from_shadow(poly, img_rgb,transform, raster_crs):
+#     """
+#     Estimate building height from shadow length using solar geometry.
+#     poly        : building polygon in raster CRS
+#     img_rgb     : RGB numpy image (H,W,3)
+#     raster_crs  : CRS of raster (used only for reprojection safety)
 
-    Returns height in meters or None.
-    """
+#     Returns height in meters or None.
+#     """
 
-    #logging.info("ESTIMATE HEIGHT FROM SHADOW CALLED")
+#     #logging.info("ESTIMATE HEIGHT FROM SHADOW CALLED")
+#     logging.info("Shadow height estimation invoked")
+
+#     try:
+#         # --------------------------------------------------
+#         # 1️⃣ Centroid → lat/lon
+#         # --------------------------------------------------
+#         gdf = gpd.GeoSeries([poly], crs=raster_crs).to_crs(epsg=4326)
+#         lon, lat = gdf.iloc[0].centroid.xy[0][0], gdf.iloc[0].centroid.xy[1][0]
+
+#         ts = datetime.fromisoformat(IMAGE_ACQ_TIME)
+#         loc = LocationInfo(latitude=lat, longitude=lon)
+
+#         print("Solar elevation:", elevation(loc.observer, ts))
+
+#         sun_elev = elevation(loc.observer, ts)
+#         sun_az = azimuth(loc.observer, ts)
+
+#         # Too low sun = unreliable
+#         if sun_elev < 12:
+#             return None
+
+#         # Shadow direction (opposite sun)
+#         theta = math.radians((sun_az + 180) % 360)
+#         #dx, dy = math.cos(theta), math.sin(theta)
+#         dx = math.sin(theta)
+#         dy = -math.cos(theta)
+
+
+#         # --------------------------------------------------
+#         # 2️⃣ Rasterize building mask
+#         # --------------------------------------------------
+#         h, w = img_rgb.shape[:2]
+
+#         from rasterio.features import rasterize
+#         #from rasterio.transform import from_bounds
+
+#         minx, miny, maxx, maxy = poly.bounds
+#         #transform = from_bounds(minx, miny, maxx, maxy, w, h)
+
+#         building_mask = rasterize(
+#             [(poly, 1)],
+#             out_shape=(h, w),
+#             transform=transform,
+#             fill=0,
+#             dtype=np.uint8
+#         )
+
+#         if building_mask.sum() < 50:
+#             return None
+
+#         # --------------------------------------------------
+#         # 3️⃣ Extract building edge pixels
+#         # --------------------------------------------------
+#         edges = cv2.Canny(building_mask * 255, 50, 150)
+#         ys, xs = np.where(edges > 0)
+
+#         if len(xs) < 20:
+#             return None
+
+#         # --------------------------------------------------
+#         # 4️⃣ Shadow probing along sun direction
+#         # --------------------------------------------------
+#         gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+
+#         pixel_size_m = abs(transform.a)
+
+#         max_shadow_px = 0
+#         shadow_pixels = []
+
+#         for x0, y0 in zip(xs, ys):
+#             max_steps = int(40 / pixel_size_m)  # max 40 meters
+#             for step in range(1, max_steps):
+#                 x = int(x0 + dx * step)
+#                 y = int(y0 + dy * step)
+
+#                 if x < 0 or y < 0 or x >= w or y >= h:
+#                     break
+
+#                 # Stop when shadow ends (bright ground)
+#                 if gray[y, x] > np.percentile(gray, 50):
+#                     break
+
+#                 #max_shadow_px = max(max_shadow_px, step)
+#                 max_shadow_px = max(max_shadow_px, step)
+
+#                 # store shadow pixel world coords
+#                 wx, wy = rasterio.transform.xy(transform, y, x, offset="center")
+#                 shadow_pixels.append((wx, wy))
+
+#         if max_shadow_px < 6:
+#             return None
+
+#         if len(shadow_pixels) < 10:
+#             return None
+
+#         shadow_poly = Polygon(shadow_pixels).convex_hull
+#         if not shadow_poly.is_valid or shadow_poly.area < 1.0:
+#             return None
+
+#         # --------------------------------------------------
+#         # 5️⃣ Height calculation
+#         # --------------------------------------------------
+#         shadow_len_m = max_shadow_px * pixel_size_m
+#         height = shadow_len_m * math.tan(math.radians(sun_elev))
+
+#         if not np.isfinite(height):
+#             return None
+
+#         return {
+#             "height": float(np.clip(height, 3.0, 80.0)),
+#             "shadow_length_m": shadow_len_m,
+#             "sun_azimuth": sun_az,
+#             "shadow_polygon": shadow_poly
+#         }
+
+
+
+#     except Exception as e:
+#         logging.debug("Shadow height estimation failed: %s", e)
+#         return None
+
+
+def directional_halfplane_filter(shadow_mask, building_mask, dx, dy):
+    """
+    Keep only shadow pixels that lie behind the building along (dx,dy).
+    Uses building centroid in pixel coords as reference.
+    """
+    ys, xs = np.where(building_mask > 0)
+    if len(xs) == 0:
+        return shadow_mask
+    cx = xs.mean()
+    cy = ys.mean()
+
+    yy, xx = np.where(shadow_mask > 0)
+    if len(xx) == 0:
+        return shadow_mask
+
+    # projection along shadow dir
+    proj = (xx - cx) * dx + (yy - cy) * dy
+
+    out = np.zeros_like(shadow_mask, dtype=np.uint8)
+    out[yy[proj > 0], xx[proj > 0]] = 1
+    return out
+def morph_cleanup(shadow_mask, open_iter=1, close_iter=1, min_area=200):
+    k = np.ones((3,3), np.uint8)
+    m = shadow_mask.astype(np.uint8)
+
+    # remove thin spikes/noise
+    m = cv2.morphologyEx(m, cv2.MORPH_OPEN, k, iterations=open_iter)
+    # fill small gaps
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k, iterations=close_iter)
+
+    # remove tiny blobs
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
+    out = np.zeros_like(m)
+    for i in range(1, num):
+        if stats[i, cv2.CC_STAT_AREA] >= min_area:
+            out[labels == i] = 1
+    return out
+import cv2
+import numpy as np
+
+def keep_shadow_connected_to_building(shadow_mask, building_mask, seed_dilate=3):
+    """
+    Keep only shadow pixels that are connected to a thin band outside building.
+    seed_dilate: pixels to dilate the building to make the "seed band".
+    """
+    k = np.ones((3,3), np.uint8)
+    dil = cv2.dilate(building_mask, k, iterations=seed_dilate)
+
+    # thin band outside the building
+    seed_band = (dil > 0).astype(np.uint8)
+    seed_band[building_mask > 0] = 0
+
+    # seeds = shadow pixels that touch this band
+    seeds = (shadow_mask > 0) & (seed_band > 0)
+    if not np.any(seeds):
+        return shadow_mask  # nothing to guide, return as-is
+
+    # connected components on shadow
+    num, labels = cv2.connectedComponents(shadow_mask.astype(np.uint8), connectivity=8)
+
+    keep = np.zeros_like(shadow_mask, dtype=np.uint8)
+    seed_labels = np.unique(labels[seeds])
+    for lab in seed_labels:
+        if lab == 0:
+            continue
+        keep[labels == lab] = 1
+
+    return keep
+
+# def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
+#     logging.info("Shadow height estimation invoked")
+
+#     try:
+#         # 1) centroid -> lat/lon for astral
+#         gdf = gpd.GeoSeries([poly], crs=raster_crs).to_crs(epsg=4326)
+#         lon, lat = gdf.iloc[0].centroid.x, gdf.iloc[0].centroid.y
+
+#         ts = datetime.fromisoformat(IMAGE_ACQ_TIME)
+#         loc = LocationInfo(latitude=lat, longitude=lon)
+
+#         sun_elev = elevation(loc.observer, ts)
+#         sun_az   = azimuth(loc.observer, ts)
+
+#         if sun_elev < 12:
+#             return None
+
+#         # 2) shadow direction in image coords
+#         theta = math.radians((sun_az + 180) % 360)
+#         dx = math.sin(theta)
+#         dy = -math.cos(theta)
+
+#         h, w = img_rgb.shape[:2]
+
+#         # 3) rasterize building footprint -> building_mask
+#         from rasterio.features import rasterize
+#         building_mask = rasterize(
+#             [(poly, 1)],
+#             out_shape=(h, w),
+#             transform=transform,
+#             fill=0,
+#             dtype=np.uint8
+#         )
+
+#         if building_mask.sum() < 50:
+#             return None
+
+#         # 4) boundary pixels
+#         edges = cv2.Canny(building_mask * 255, 50, 150)
+#         ys, xs = np.where(edges > 0)
+#         if len(xs) < 20:
+#             return None
+
+#         # 5) compute outward normals using distance transform on the OUTSIDE
+#         outside = (building_mask == 0).astype(np.uint8)
+#         # distance to nearest building pixel (in the outside region)
+#         dist = cv2.distanceTransform(outside, cv2.DIST_L2, 3)
+
+#         # gradient approx (points outward from building into outside)
+#         gx = cv2.Sobel(dist, cv2.CV_32F, 1, 0, ksize=3)
+#         gy = cv2.Sobel(dist, cv2.CV_32F, 0, 1, ksize=3)
+
+#         # 6) grayscale and threshold reference
+#         gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+#         thr = np.percentile(gray, 50)
+
+#         pixel_size_m = abs(transform.a)
+#         max_steps = int(40 / pixel_size_m)
+
+#         shadow_mask = np.zeros((h, w), dtype=np.uint8)
+#         max_shadow_px = 0
+
+#         for x0, y0 in zip(xs, ys):
+#             # outward normal at this boundary pixel
+#             nx = float(gx[y0, x0])
+#             ny = float(gy[y0, x0])
+#             nrm = (nx * nx + ny * ny) ** 0.5
+#             if nrm < 1e-6:
+#                 continue
+#             nx /= nrm
+#             ny /= nrm
+
+#             # keep only shadow-facing edge pixels:
+#             # dot(normal, shadow_dir) > 0 means this edge "faces" the shadow direction
+#             if (nx * dx + ny * dy) < 0.25:
+#                 continue
+
+#             # march along shadow direction
+#             left_building = False
+#             local_len = 0
+
+#             for step in range(1, max_steps):
+#                 x = int(round(x0 + dx * step))
+#                 y = int(round(y0 + dy * step))
+#                 if x < 0 or y < 0 or x >= w or y >= h:
+#                     break
+
+#                 # ensure we don't count pixels inside the building
+#                 if building_mask[y, x] == 1:
+#                     continue
+#                 else:
+#                     left_building = True
+
+#                 if not left_building:
+#                     continue
+
+#                 # stop condition: brightness indicates end of shadow
+#                 if gray[y, x] > thr:
+#                     break
+
+#                 shadow_mask[y, x] = 1
+#                 local_len = step
+
+#             if local_len > max_shadow_px:
+#                 max_shadow_px = local_len
+
+#         # remove any accidental overlap with building
+#         shadow_mask[building_mask == 1] = 0
+
+#         if max_shadow_px < 6 or shadow_mask.sum() < 10:
+#             return None
+
+#         # 7) polygonize shadow_mask (no convex hull)
+#         # use contours
+#         cnts, _ = cv2.findContours(shadow_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+#         if not cnts:
+#             return None
+
+#         # pick largest shadow blob
+#         cnt = max(cnts, key=cv2.contourArea)
+#         if cv2.contourArea(cnt) < 5:
+#             return None
+
+#         cnt = cnt.reshape(-1, 2)
+#         coords = []
+#         for (cx, cy) in cnt:
+#             wx, wy = rasterio.transform.xy(transform, int(cy), int(cx), offset="center")
+#             coords.append((wx, wy))
+
+#         shadow_poly = Polygon(coords)
+#         if not shadow_poly.is_valid:
+#             shadow_poly = shadow_poly.buffer(0)
+
+#         if shadow_poly.is_empty or shadow_poly.area < 1.0:
+#             return None
+
+#         # 8) HARD GUARANTEE: shadow does not include building
+#         shadow_poly = shadow_poly.difference(poly)
+#         if shadow_poly.is_empty:
+#             return None
+#         if shadow_poly.geom_type == "MultiPolygon":
+#             shadow_poly = max(shadow_poly.geoms, key=lambda g: g.area)
+
+#         # 9) height math
+#         shadow_len_m = max_shadow_px * pixel_size_m
+#         height = shadow_len_m * math.tan(math.radians(sun_elev))
+#         if not np.isfinite(height):
+#             return None
+
+#         return {
+#             "height": float(np.clip(height, 3.0, 80.0)),
+#             "shadow_length_m": float(shadow_len_m),
+#             "sun_azimuth": float(sun_az),
+#             "shadow_polygon": shadow_poly
+#         }
+
+#     except Exception as e:
+#         logging.debug("Shadow height estimation failed: %s", e)
+#         return None
+
+
+def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
     logging.info("Shadow height estimation invoked")
 
+    # ---------- helpers (safe inline; remove if you already have them globally) ----------
+    def keep_shadow_connected_to_building(shadow_mask, building_mask, seed_dilate=1):
+        k = np.ones((3, 3), np.uint8)
+        dil = cv2.dilate(building_mask.astype(np.uint8), k, iterations=int(seed_dilate))
+
+        # thin band just outside building
+        seed_band = (dil > 0).astype(np.uint8)
+        seed_band[building_mask > 0] = 0
+
+        # shadow pixels that touch that band
+        seeds = (shadow_mask > 0) & (seed_band > 0)
+        if not np.any(seeds):
+            return shadow_mask
+
+        num, labels = cv2.connectedComponents(shadow_mask.astype(np.uint8), connectivity=8)
+
+        keep = np.zeros_like(shadow_mask, dtype=np.uint8)
+        seed_labels = np.unique(labels[seeds])
+        for lab in seed_labels:
+            if lab == 0:
+                continue
+            keep[labels == lab] = 1
+        return keep
+
+    def directional_halfplane_filter(shadow_mask, building_mask, dx, dy):
+        ys, xs = np.where(building_mask > 0)
+        if len(xs) == 0:
+            return shadow_mask
+
+        cx = xs.mean()
+        cy = ys.mean()
+
+        yy, xx = np.where(shadow_mask > 0)
+        if len(xx) == 0:
+            return shadow_mask
+
+        proj = (xx - cx) * dx + (yy - cy) * dy
+        out = np.zeros_like(shadow_mask, dtype=np.uint8)
+        out[yy[proj > 0], xx[proj > 0]] = 1
+        return out
+
+    def morph_cleanup(shadow_mask, open_iter=1, close_iter=1, min_area=150):
+        k = np.ones((3, 3), np.uint8)
+        m = shadow_mask.astype(np.uint8)
+
+        # remove spikes/noise
+        if open_iter and open_iter > 0:
+            m = cv2.morphologyEx(m, cv2.MORPH_OPEN, k, iterations=int(open_iter))
+        # fill tiny gaps
+        if close_iter and close_iter > 0:
+            m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k, iterations=int(close_iter))
+
+        num, labels, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
+        out = np.zeros_like(m)
+        for i in range(1, num):
+            if stats[i, cv2.CC_STAT_AREA] >= int(min_area):
+                out[labels == i] = 1
+        return out
+    # -------------------------------------------------------------------------------
+
     try:
-        # --------------------------------------------------
-        # 1️⃣ Centroid → lat/lon
-        # --------------------------------------------------
+        # 1) centroid -> lat/lon for astral
         gdf = gpd.GeoSeries([poly], crs=raster_crs).to_crs(epsg=4326)
-        lon, lat = gdf.iloc[0].centroid.xy[0][0], gdf.iloc[0].centroid.xy[1][0]
+        lon, lat = gdf.iloc[0].centroid.x, gdf.iloc[0].centroid.y
 
         ts = datetime.fromisoformat(IMAGE_ACQ_TIME)
         loc = LocationInfo(latitude=lat, longitude=lon)
 
-        print("Solar elevation:", elevation(loc.observer, ts))
-
         sun_elev = elevation(loc.observer, ts)
-        sun_az = azimuth(loc.observer, ts)
+        sun_az   = azimuth(loc.observer, ts)
 
-        # Too low sun = unreliable
+        if not np.isfinite(sun_elev) or not np.isfinite(sun_az):
+            return None
         if sun_elev < 12:
             return None
 
-        # Shadow direction (opposite sun)
+        # 2) shadow direction in image coords
         theta = math.radians((sun_az + 180) % 360)
-        #dx, dy = math.cos(theta), math.sin(theta)
         dx = math.sin(theta)
         dy = -math.cos(theta)
 
-
-        # --------------------------------------------------
-        # 2️⃣ Rasterize building mask
-        # --------------------------------------------------
         h, w = img_rgb.shape[:2]
 
+        # 3) rasterize building footprint -> building_mask
         from rasterio.features import rasterize
-        #from rasterio.transform import from_bounds
-
-        minx, miny, maxx, maxy = poly.bounds
-        #transform = from_bounds(minx, miny, maxx, maxy, w, h)
-
         building_mask = rasterize(
             [(poly, 1)],
             out_shape=(h, w),
@@ -543,80 +944,139 @@ def estimate_height_from_shadow(poly, img_rgb,transform, raster_crs):
             dtype=np.uint8
         )
 
-        if building_mask.sum() < 50:
+        if int(building_mask.sum()) < 50:
             return None
 
-        # --------------------------------------------------
-        # 3️⃣ Extract building edge pixels
-        # --------------------------------------------------
+        # 4) boundary pixels
         edges = cv2.Canny(building_mask * 255, 50, 150)
         ys, xs = np.where(edges > 0)
-
         if len(xs) < 20:
             return None
 
-        # --------------------------------------------------
-        # 4️⃣ Shadow probing along sun direction
-        # --------------------------------------------------
+        # 5) outward normals using distance transform on OUTSIDE
+        outside = (building_mask == 0).astype(np.uint8)
+        dist = cv2.distanceTransform(outside, cv2.DIST_L2, 3)
+        gx = cv2.Sobel(dist, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(dist, cv2.CV_32F, 0, 1, ksize=3)
+
+        # 6) grayscale and threshold reference
         gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+        thr = np.percentile(gray, 50)
 
         pixel_size_m = abs(transform.a)
+        if pixel_size_m <= 0:
+            return None
+        max_steps = int(40 / pixel_size_m)
 
+        shadow_mask = np.zeros((h, w), dtype=np.uint8)
         max_shadow_px = 0
-        shadow_pixels = []
 
         for x0, y0 in zip(xs, ys):
-            max_steps = int(40 / pixel_size_m)  # max 40 meters
-            for step in range(1, max_steps):
-                x = int(x0 + dx * step)
-                y = int(y0 + dy * step)
+            # outward normal
+            nx = float(gx[y0, x0])
+            ny = float(gy[y0, x0])
+            nrm = (nx * nx + ny * ny) ** 0.5
+            if nrm < 1e-6:
+                continue
+            nx /= nrm
+            ny /= nrm
 
+            # keep only shadow-facing edge pixels
+            if (nx * dx + ny * dy) < 0.25:
+                continue
+
+            local_len = 0
+
+            for step in range(1, max_steps):
+                x = int(round(x0 + dx * step))
+                y = int(round(y0 + dy * step))
                 if x < 0 or y < 0 or x >= w or y >= h:
                     break
 
-                # Stop when shadow ends (bright ground)
-                if gray[y, x] > np.percentile(gray, 50):
+                # never include building pixels
+                if building_mask[y, x] == 1:
+                    continue
+
+                # stop when bright => end of shadow
+                if gray[y, x] > thr:
                     break
 
-                #max_shadow_px = max(max_shadow_px, step)
-                max_shadow_px = max(max_shadow_px, step)
+                shadow_mask[y, x] = 1
+                local_len = step
 
-                # store shadow pixel world coords
-                wx, wy = rasterio.transform.xy(transform, y, x, offset="center")
-                shadow_pixels.append((wx, wy))
+            if local_len > max_shadow_px:
+                max_shadow_px = local_len
 
-        if max_shadow_px < 6:
+        # Remove any accidental overlap
+        shadow_mask[building_mask == 1] = 0
+
+        if max_shadow_px < 6 or int(shadow_mask.sum()) < 10:
             return None
 
-        if len(shadow_pixels) < 10:
+        # ===================== NEW: CLEANUP TO REMOVE EXTRA NOISE =====================
+        # A) Keep only shadow blobs connected to a band just outside building
+        shadow_mask = keep_shadow_connected_to_building(shadow_mask, building_mask, seed_dilate=2)
+        if int(shadow_mask.sum()) < 10:
             return None
 
-        shadow_poly = Polygon(shadow_pixels).convex_hull
-        if not shadow_poly.is_valid or shadow_poly.area < 1.0:
+        # B) Keep only pixels "behind" building along shadow direction
+        shadow_mask = directional_halfplane_filter(shadow_mask, building_mask, dx, dy)
+        if int(shadow_mask.sum()) < 10:
             return None
 
-        # --------------------------------------------------
-        # 5️⃣ Height calculation
-        # --------------------------------------------------
+        # C) Morphological cleanup (spikes / little islands)
+        shadow_mask = morph_cleanup(shadow_mask, open_iter=1, close_iter=1, min_area=150)
+        shadow_mask[building_mask == 1] = 0
+        if int(shadow_mask.sum()) < 10:
+            return None
+        # ============================================================================
+
+        # 7) polygonize shadow_mask
+        cnts, _ = cv2.findContours(shadow_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not cnts:
+            return None
+
+        # pick largest shadow blob
+        cnt = max(cnts, key=cv2.contourArea)
+        if cv2.contourArea(cnt) < 20:
+            return None
+
+        cnt = cnt.reshape(-1, 2)
+        coords = []
+        for (cx, cy) in cnt:
+            wx, wy = rasterio.transform.xy(transform, int(cy), int(cx), offset="center")
+            coords.append((wx, wy))
+
+        shadow_poly = Polygon(coords)
+        if not shadow_poly.is_valid:
+            shadow_poly = shadow_poly.buffer(0)
+
+        if shadow_poly.is_empty or shadow_poly.area < 1.0:
+            return None
+
+        # 8) HARD GUARANTEE: shadow does not include building (and doesn't penetrate)
+        shadow_poly = shadow_poly.difference(poly)
+        if shadow_poly.is_empty:
+            return None
+        if shadow_poly.geom_type == "MultiPolygon":
+            shadow_poly = max(shadow_poly.geoms, key=lambda g: g.area)
+
+        # 9) height math
         shadow_len_m = max_shadow_px * pixel_size_m
         height = shadow_len_m * math.tan(math.radians(sun_elev))
-
         if not np.isfinite(height):
             return None
 
         return {
             "height": float(np.clip(height, 3.0, 80.0)),
-            "shadow_length_m": shadow_len_m,
-            "sun_azimuth": sun_az,
+            "shadow_length_m": float(shadow_len_m),
+            "sun_azimuth": float(sun_az),
             "shadow_polygon": shadow_poly
         }
-
-
 
     except Exception as e:
         logging.debug("Shadow height estimation failed: %s", e)
         return None
-
 
 
 def is_box_too_big(x1p, y1p, x2p, y2p, img_w, img_h, frac_thresh):
@@ -997,50 +1457,50 @@ def overlaps_existing(poly, existing, thresh=0.5):
 
 
 
-def get_osm_buildings(bounds):
-    """
-    Fetch OSM buildings with local cache fallback.
-    """
-    # 1️⃣ Try local cache first
-    return None
-    logging.info(f"osmnx version: {ox.__version__}")
-    logging.info(f"max_query_area_size: {ox.settings.max_query_area_size}")
-    logging.info(f"use_cache: {ox.settings.use_cache}, cache_folder: {ox.settings.cache_folder}")
-    cached = load_osm_cache(bounds)
-    if cached is not None:
-        return cached
+# def get_osm_buildings(bounds):
+#     """
+#     Fetch OSM buildings with local cache fallback.
+#     """
+#     # 1️⃣ Try local cache first
+#     return None
+#     logging.info(f"osmnx version: {ox.__version__}")
+#     logging.info(f"max_query_area_size: {ox.settings.max_query_area_size}")
+#     logging.info(f"use_cache: {ox.settings.use_cache}, cache_folder: {ox.settings.cache_folder}")
+#     cached = load_osm_cache(bounds)
+#     if cached is not None:
+#         return cached
 
-    west, south, east, north = bounds
+#     west, south, east, north = bounds
 
-    fallback = load_osm_cache_best_effort(bounds, raster_crs="EPSG:3857")
-    if fallback is not None and not fallback.empty:
-        return fallback
-    else:
-        logging.info(f"NO CACHE RESULT FOUND, OSM API WILL BE CALLED ")
+#     fallback = load_osm_cache_best_effort(bounds, raster_crs="EPSG:3857")
+#     if fallback is not None and not fallback.empty:
+#         return fallback
+#     else:
+#         logging.info(f"NO CACHE RESULT FOUND, OSM API WILL BE CALLED ")
 
-    try:
-        # OSMnx 2.x expects bbox=(west, south, east, north)
-        gdf = ox.features_from_bbox(bbox=(west, south, east, north), tags={"building": True})
-    except Exception as e:
-        logging.warning("OSM API failed: %s", e)
-        fallback = load_osm_cache_best_effort(bounds, raster_crs="EPSG:3857")
-        if fallback is not None and not fallback.empty:
-            return fallback
-        return None
+#     try:
+#         # OSMnx 2.x expects bbox=(west, south, east, north)
+#         gdf = ox.features_from_bbox(bbox=(west, south, east, north), tags={"building": True})
+#     except Exception as e:
+#         logging.warning("OSM API failed: %s", e)
+#         fallback = load_osm_cache_best_effort(bounds, raster_crs="EPSG:3857")
+#         if fallback is not None and not fallback.empty:
+#             return fallback
+#         return None
 
-    if gdf is None or gdf.empty:
-        logging.warning("OSM returned empty result")
-        fallback = load_osm_cache_best_effort(bounds, raster_crs="EPSG:3857")
-        if fallback is not None and not fallback.empty:
-            return fallback
-        return None
+#     if gdf is None or gdf.empty:
+#         logging.warning("OSM returned empty result")
+#         fallback = load_osm_cache_best_effort(bounds, raster_crs="EPSG:3857")
+#         if fallback is not None and not fallback.empty:
+#             return fallback
+#         return None
 
-    gdf = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
+#     gdf = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
 
-    # 2️⃣ Save to cache
-    save_osm_cache(gdf, bounds)
+#     # 2️⃣ Save to cache
+#     save_osm_cache(gdf, bounds)
 
-    return gdf
+#     return gdf
 
 
 
@@ -1429,7 +1889,8 @@ def detect_buildings(bounds):
     pixel_area_m2 = abs(transform.a * transform.e)
     aoi_area_m2 = h * w * pixel_area_m2
 
-    osm = get_osm_buildings(bounds)
+    #osm = get_osm_buildings(bounds)
+    osm = None
     tiles = []
 
     if aoi_area_m2 > MIN_TILING_AREA_M2:
@@ -1448,17 +1909,19 @@ def detect_buildings(bounds):
 
 
             # 1) default pass (fast)
-            yolo_boxes = detect_building_boxes_microtiles(
-                tile_rgb,
-                tile_size=None,
-                overlap=None,
-                conf=0.05,
-                imgsz=640,
-                debug=True,
-                debug_tag="tile",
-                target_tile_factor=1.5,
-                overlap_cap=0.75
-            )
+            # yolo_boxes = detect_building_boxes_microtiles(
+            #     tile_rgb,
+            #     tile_size=None,
+            #     overlap=None,
+            #     conf=0.05,
+            #     imgsz=640,
+            #     debug=True,
+            #     debug_tag="tile",
+            #     target_tile_factor=1.5,
+            #     overlap_cap=0.75
+            # )
+
+            yolo_boxes = detect_building_boxes_ensemble(tile_rgb, debug=True, debug_tag="tile_ens")
 
             # 2) gate: if too few boxes, run ensemble as recall booster
             if len(yolo_boxes) < 3:
@@ -2215,7 +2678,7 @@ def detect_buildings(bounds):
         print(f"CONF={conf:.2f} → HEIGHT={height}")
 
         #final_buildings.append((poly, height, conf,shadow_info))
-        final_buildings.append((poly, height, conf,None))
+        final_buildings.append((poly, height, conf,shadow_info))
 
     #polys, heights, confidences = zip(*final_buildings)
     polys = [b[0] for b in final_buildings]
