@@ -191,100 +191,6 @@ ox.settings.log_console = False
 # --------------------------------------------------
 # HELPERS
 # --------------------------------------------------
-
-
-def _expand_box_xyxy(x1, y1, x2, y2, W, H, scale=1.25):
-    """Expand a box around its center by `scale`, clamp to image bounds."""
-    cx = 0.5 * (x1 + x2)
-    cy = 0.5 * (y1 + y2)
-    bw = (x2 - x1)
-    bh = (y2 - y1)
-    nbw = bw * scale
-    nbh = bh * scale
-    nx1 = int(max(0, round(cx - 0.5 * nbw)))
-    ny1 = int(max(0, round(cy - 0.5 * nbh)))
-    nx2 = int(min(W - 1, round(cx + 0.5 * nbw)))
-    ny2 = int(min(H - 1, round(cy + 0.5 * nbh)))
-    # keep valid
-    if nx2 <= nx1 + 2: nx2 = min(W - 1, nx1 + 3)
-    if ny2 <= ny1 + 2: ny2 = min(H - 1, ny1 + 3)
-    return nx1, ny1, nx2, ny2
-
-
-def _pick_best_mask_for_box(masks, scores, box_area, bw, bh, yconf):
-    """Apply your existing min_area/max_fill logic and pick best SAM mask."""
-    min_area = max(20, int(0.002 * box_area))
-    max_fill = adaptive_max_fill(box_area, bw, bh, yconf)
-
-    best = None
-    best_score = -1.0
-
-    for m, s in zip(masks, scores):
-        area = int(m.sum())
-        if area < min_area:
-            continue
-
-        fill_ratio = area / max(1, box_area)
-        too_full = fill_ratio > max_fill
-
-        # your current policy: allow near-full masks only if very confident
-        if too_full and not (yconf >= 0.80 and float(s) >= 0.85 and fill_ratio <= 0.995):
-            continue
-
-        s = float(s)
-        if s > best_score:
-            best = m
-            best_score = s
-
-    return best, float(best_score), min_area
-
-
-def predict_mask_twopass_union(predictor, x1p, y1p, x2p, y2p, yconf, expand_scale=1.25):
-    """
-    Two SAM passes:
-      pass1: original box
-      pass2: expanded box
-    Return: union_mask_uint8, combined_score, min_area_for_original_box
-    Assumes predictor.set_image(...) already called for current image.
-    """
-    H, W = predictor.input_size  # (H, W) for current image in SAM predictor
-    # NOTE: predictor.input_size exists in SAM predictor; if not, use image shape you already have.
-    # If this ever fails, replace with H,W from the current img you have in scope.
-
-    bw1 = x2p - x1p
-    bh1 = y2p - y1p
-    box1_area = max(1, bw1 * bh1)
-
-    # pass 1
-    box1 = np.array([x1p, y1p, x2p, y2p], dtype=np.float32)
-    masks1, scores1, _ = predictor.predict(box=box1, multimask_output=True)
-    m1, s1, min_area = _pick_best_mask_for_box(masks1, scores1, box1_area, bw1, bh1, yconf)
-
-    # pass 2 (expanded)
-    ex1, ey1, ex2, ey2 = _expand_box_xyxy(x1p, y1p, x2p, y2p, W, H, scale=expand_scale)
-    bw2 = ex2 - ex1
-    bh2 = ey2 - ey1
-    box2_area = max(1, bw2 * bh2)
-
-    box2 = np.array([ex1, ey1, ex2, ey2], dtype=np.float32)
-    masks2, scores2, _ = predictor.predict(box=box2, multimask_output=True)
-    m2, s2, _ = _pick_best_mask_for_box(masks2, scores2, box2_area, bw2, bh2, yconf)
-
-    if m1 is None and m2 is None:
-        return None, None, min_area, (ex1, ey1, ex2, ey2)
-
-    if m1 is None:
-        union = m2
-        score = s2
-    elif m2 is None:
-        union = m1
-        score = s1
-    else:
-        union = (m1.astype(np.uint8) | m2.astype(np.uint8))
-        score = max(s1, s2)  # conservative: keep best SAM score
-
-    return union.astype(np.uint8), float(score), int(min_area), (ex1, ey1, ex2, ey2)
-
 def iou_xyxy(a,b):
     ax1,ay1,ax2,ay2,_ = a
     bx1,by1,bx2,by2,_ = b
@@ -2111,139 +2017,82 @@ def detect_buildings(bounds):
 
                     sbox = np.array([sx1, sy1, sx2, sy2], dtype=np.float32)
 
-                    # masks, scores, _ = predictor.predict(
-                    #     box=sbox,
-                    #     multimask_output=True
-                    # )
-
-                    # min_area = max(20, int(0.002 * sbox_area))
-                    # max_fill = adaptive_max_fill(sbox_area, sbw, sbh, yconf)
-
-                    # best = None
-                    # best_score = -1.0
-
-                    # for m, s in zip(masks, scores):
-                    #     area = int(m.sum())
-                    #     fill_ratio = area / sbox_area
-
-                    #     if area < min_area:
-                    #         DROP["min_area"] += 1
-                    #         continue
-
-                    #     # if fill_ratio > max_fill and not (yconf >= 0.80 and float(s) >= 0.85):
-                    #     #     continue
-
-                    #     if fill_ratio > max_fill + 0.03 and not (yconf >= 0.75):
-                    #         DROP["too_full"] += 1
-                    #         continue
-
-                    #     if s > best_score:
-                    #         best = m
-                    #         best_score = float(s)
-
-                    # if best is None:
-                    #     DROP["none"] += 1
-                    #     RECALL["sam_drop"] += 1
-                    #     continue
-
-                    # RECALL["sam_ok"] += 1
-
-
-                    # # --- clip SAM mask to sub-box (LOOSER, with minimum context)
-                    # best = best.astype(np.uint8)
-
-                    # MIN_PAD_PX = 16          # <-- key: never allow tiny padding
-                    # MAX_PAD_PX = 64
-                    # CLIP_EXTRA_PX = 12       # <-- extra margin only for clipping (prevents chopping corners)
-
-                    # pad = int(0.08 * min(sbw, sbh))
-                    # pad = max(MIN_PAD_PX, min(MAX_PAD_PX, pad))
-
-                    # # prompt box is (sx1..sx2); clip box is slightly larger than prompt+pad
-                    # x1c = max(0, int(sx1 - pad - CLIP_EXTRA_PX))
-                    # y1c = max(0, int(sy1 - pad - CLIP_EXTRA_PX))
-                    # x2c = min(best.shape[1]-1, int(sx2 + pad + CLIP_EXTRA_PX))
-                    # y2c = min(best.shape[0]-1, int(sy2 + pad + CLIP_EXTRA_PX))
-
-                    # mask_clip = np.zeros_like(best, dtype=np.uint8)
-                    # mask_clip[y1c:y2c+1, x1c:x2c+1] = 1
-                    
-
-                    # best_preclip = best.copy()
-                    # best_area = int(best.sum())
-
-                    # best = best & mask_clip
-                    # best_clipped_area = int(best.sum())
-
-                    # # 🔒 one-line area-loss guard (prevents chopping container roofs)
-                    # if best_clipped_area < 0.85 * best_area:
-                    #     best = best_preclip
-                    #     best_clipped_area = best_area
-
-                    # if best_clipped_area < min_area:
-                    #     continue
-
-                    # poly = mask_to_polygon(
-                    #     {"segmentation": best},
-                    #     t_transform
-                    # )
-
-                    union_mask, best_score, min_area, (ex1, ey1, ex2, ey2) = predict_mask_twopass_union(
-                        predictor,
-                        sx1, sy1, sx2, sy2,
-                        yconf=yconf,
-                        expand_scale=1.28   # 1.20–1.35 is typical; 1.28 is a good start for roofs
+                    masks, scores, _ = predictor.predict(
+                        box=sbox,
+                        multimask_output=True
                     )
 
-                    if union_mask is None:
+                    min_area = max(20, int(0.002 * sbox_area))
+                    max_fill = adaptive_max_fill(sbox_area, sbw, sbh, yconf)
+
+                    best = None
+                    best_score = -1.0
+
+                    for m, s in zip(masks, scores):
+                        area = int(m.sum())
+                        fill_ratio = area / sbox_area
+
+                        if area < min_area:
+                            DROP["min_area"] += 1
+                            continue
+
+                        # if fill_ratio > max_fill and not (yconf >= 0.80 and float(s) >= 0.85):
+                        #     continue
+
+                        if fill_ratio > max_fill + 0.03 and not (yconf >= 0.75):
+                            DROP["too_full"] += 1
+                            continue
+
+                        if s > best_score:
+                            best = m
+                            best_score = float(s)
+
+                    if best is None:
                         DROP["none"] += 1
                         RECALL["sam_drop"] += 1
                         continue
 
                     RECALL["sam_ok"] += 1
 
-                    best_preclip = union_mask.copy()
-                    best_area = int(union_mask.sum())
 
-                    # --- loose clip around EXPANDED box (not the tight one)
-                    MIN_PAD_PX = 16
-                    MAX_PAD_PX = 96          # allow a bit more now
-                    CLIP_EXTRA_PX = 16
+                    # --- clip SAM mask to sub-box (LOOSER, with minimum context)
+                    best = best.astype(np.uint8)
 
-                    sbw = sx2 - sx1
-                    sbh = sy2 - sy1
-                    pad = int(0.10 * min(sbw, sbh))
+                    MIN_PAD_PX = 16          # <-- key: never allow tiny padding
+                    MAX_PAD_PX = 64
+                    CLIP_EXTRA_PX = 12       # <-- extra margin only for clipping (prevents chopping corners)
+
+                    pad = int(0.08 * min(sbw, sbh))
                     pad = max(MIN_PAD_PX, min(MAX_PAD_PX, pad))
 
-                    tile_h, tile_w = tile_rgb.shape[:2]
-                    x1c = max(0, int(ex1 - pad - CLIP_EXTRA_PX))
-                    y1c = max(0, int(ey1 - pad - CLIP_EXTRA_PX))
-                    x2c = min(tile_w - 1, int(ex2 + pad + CLIP_EXTRA_PX))
-                    y2c = min(tile_h - 1, int(ey2 + pad + CLIP_EXTRA_PX))
+                    # prompt box is (sx1..sx2); clip box is slightly larger than prompt+pad
+                    x1c = max(0, int(sx1 - pad - CLIP_EXTRA_PX))
+                    y1c = max(0, int(sy1 - pad - CLIP_EXTRA_PX))
+                    x2c = min(best.shape[1]-1, int(sx2 + pad + CLIP_EXTRA_PX))
+                    y2c = min(best.shape[0]-1, int(sy2 + pad + CLIP_EXTRA_PX))
 
-                    mask_clip = np.zeros_like(union_mask, dtype=np.uint8)
+                    mask_clip = np.zeros_like(best, dtype=np.uint8)
                     mask_clip[y1c:y2c+1, x1c:x2c+1] = 1
+                    
 
-                    best = union_mask & mask_clip
+                    best_preclip = best.copy()
+                    best_area = int(best.sum())
+
+                    best = best & mask_clip
                     best_clipped_area = int(best.sum())
 
-                    # 🔒 area-loss guard
+                    # 🔒 one-line area-loss guard (prevents chopping container roofs)
                     if best_clipped_area < 0.85 * best_area:
                         best = best_preclip
                         best_clipped_area = best_area
 
                     if best_clipped_area < min_area:
-                        DROP["min_area"] += 1
                         continue
 
-                    poly = mask_to_polygon({"segmentation": best}, t_transform)
-                    if poly is None:
-                        DROP["poly_none"] += 1
-                        continue
-
-                    final_conf = 0.6 * best_score + 0.4 * yconf
-                    all_buildings.append((poly, DEFAULT_HEIGHT, final_conf))
-
+                    poly = mask_to_polygon(
+                        {"segmentation": best},
+                        t_transform
+                    )
 
                     if poly is None:
                         DROP["poly_none"] += 1
