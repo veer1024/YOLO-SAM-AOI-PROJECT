@@ -26490,5 +26490,1052 @@
     "mask_coverage": 0.24715232849121094,
     "mask_touches_border": false,
     "aoi_bounds": null
+  },
+  {
+    "id": "0340842e-73c4-477b-8e87-f59b93004206",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-25T05:39:28.835079+00:00",
+    "image": "ml/feedback/wrong_geometry/images/0340842e-73c4-477b-8e87-f59b93004206.png",
+    "mask": "ml/feedback/wrong_geometry/masks/0340842e-73c4-477b-8e87-f59b93004206.png",
+    "bbox_xyxy": [
+      99,
+      627,
+      255,
+      671
+    ],
+    "mask_coverage": 0.008663177490234375,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.5355486869812,
+      28.87263752878745,
+      89.54008162021638,
+      28.876874673314383
+    ]
+  },
+  {
+    "id": "009607ef-072f-43c3-9619-f5f40373aff4",
+    "type": "not_a_building",
+    "timestamp": "2026-01-25T05:40:40.980628+00:00",
+    "image": "ml/feedback/not_a_building/images/009607ef-072f-43c3-9619-f5f40373aff4.png",
+    "mask": "ml/feedback/not_a_building/masks/009607ef-072f-43c3-9619-f5f40373aff4.png",
+    "bbox_xyxy": [
+      637,
+      910,
+      913,
+      974
+    ],
+    "mask_coverage": 0.015508651733398438,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.53547894954683,
+      28.87260464561543,
+      89.53999578952791,
+      28.876978016144133
+    ]
+  },
+  {
+    "id": "1f947aeb-170d-497e-abc2-0044a178f2d5",
+    "type": "not_a_building",
+    "timestamp": "2026-01-25T05:40:45.965589+00:00",
+    "image": "ml/feedback/not_a_building/images/1f947aeb-170d-497e-abc2-0044a178f2d5.png",
+    "mask": "ml/feedback/not_a_building/masks/1f947aeb-170d-497e-abc2-0044a178f2d5.png",
+    "bbox_xyxy": [
+      60,
+      193,
+      78,
+      451
+    ],
+    "mask_coverage": 0.006623268127441406,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.53547894954683,
+      28.87260464561543,
+      89.53999578952791,
+      28.876978016144133
+    ]
+  },
+  {
+    "id": "d4efb8f7-16d1-4a79-b61a-5b1af2993781",
+    "type": "not_a_building",
+    "timestamp": "2026-01-25T05:40:53.489482+00:00",
+    "image": "ml/feedback/not_a_building/images/d4efb8f7-16d1-4a79-b61a-5b1af2993781.png",
+    "mask": "ml/feedback/not_a_building/masks/d4efb8f7-16d1-4a79-b61a-5b1af2993781.png",
+    "bbox_xyxy": [
+      641,
+      858,
+      772,
+      892
+    ],
+    "mask_coverage": 0.004047393798828125,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.53547894954683,
+      28.87260464561543,
+      89.53999578952791,
+      28.876978016144133
+    ]
+  },
+  {
+    "id": "33fd21c5-6490-4c8b-a206-7a05cfd3f55b",
+    "type": "not_a_building",
+    "timestamp": "2026-01-25T05:40:58.002980+00:00",
+    "image": "ml/feedback/not_a_building/images/33fd21c5-6490-4c8b-a206-7a05cfd3f55b.png",
+    "mask": "ml/feedback/not_a_building/masks/33fd21c5-6490-4c8b-a206-7a05cfd3f55b.png",
+    "bbox_xyxy": [
+      890,
+      15,
+      918,
+      52
+    ],
+    "mask_coverage": 0.0008602142333984375,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.53547894954683,
+      28.87260464561543,
+      89.53999578952791,
+      28.876978016144133
+    ]
+  },
+  {
+    "id": "63053242-a82b-42ec-9744-e809ad318283",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T05:41:54.801642+00:00",
+    "image": "ml/feedback/missing_building/images/63053242-a82b-42ec-9744-e809ad318283.png",
+    "mask": "ml/feedback/missing_building/masks/63053242-a82b-42ec-9744-e809ad318283.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.2474508285522461,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "0a57a6fa-0949-44ca-ab1e-ea7f71d2d07f",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T05:42:05.815600+00:00",
+    "image": "ml/feedback/missing_building/images/0a57a6fa-0949-44ca-ab1e-ea7f71d2d07f.png",
+    "mask": "ml/feedback/missing_building/masks/0a57a6fa-0949-44ca-ab1e-ea7f71d2d07f.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.2435007095336914,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "66acd3dd-8686-4fbd-8809-d40771910a66",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T05:42:17.953103+00:00",
+    "image": "ml/feedback/missing_building/images/66acd3dd-8686-4fbd-8809-d40771910a66.png",
+    "mask": "ml/feedback/missing_building/masks/66acd3dd-8686-4fbd-8809-d40771910a66.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.2411642074584961,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "a7977ef8-4f4e-4802-a8d9-116b15f2b037",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T05:42:26.984472+00:00",
+    "image": "ml/feedback/missing_building/images/a7977ef8-4f4e-4802-a8d9-116b15f2b037.png",
+    "mask": "ml/feedback/missing_building/masks/a7977ef8-4f4e-4802-a8d9-116b15f2b037.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24543285369873047,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "16b27097-0251-48d9-8b72-8f0447c95ea4",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T05:42:36.905766+00:00",
+    "image": "ml/feedback/missing_building/images/16b27097-0251-48d9-8b72-8f0447c95ea4.png",
+    "mask": "ml/feedback/missing_building/masks/16b27097-0251-48d9-8b72-8f0447c95ea4.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.23974037170410156,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "03f1db71-d105-4b4f-8751-619cdd88ca9f",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T05:42:46.107612+00:00",
+    "image": "ml/feedback/missing_building/images/03f1db71-d105-4b4f-8751-619cdd88ca9f.png",
+    "mask": "ml/feedback/missing_building/masks/03f1db71-d105-4b4f-8751-619cdd88ca9f.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.2479228973388672,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "90248eb8-4cb6-4e44-96fd-e7c4da6d93e6",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T05:42:56.387695+00:00",
+    "image": "ml/feedback/missing_building/images/90248eb8-4cb6-4e44-96fd-e7c4da6d93e6.png",
+    "mask": "ml/feedback/missing_building/masks/90248eb8-4cb6-4e44-96fd-e7c4da6d93e6.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24556541442871094,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "82ee0388-1f2a-4424-8877-342f959d69ab",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T05:43:07.286143+00:00",
+    "image": "ml/feedback/missing_building/images/82ee0388-1f2a-4424-8877-342f959d69ab.png",
+    "mask": "ml/feedback/missing_building/masks/82ee0388-1f2a-4424-8877-342f959d69ab.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24442481994628906,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "1678d1a2-86f3-4b8c-9125-2225f8cab806",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T05:43:22.654846+00:00",
+    "image": "ml/feedback/missing_building/images/1678d1a2-86f3-4b8c-9125-2225f8cab806.png",
+    "mask": "ml/feedback/missing_building/masks/1678d1a2-86f3-4b8c-9125-2225f8cab806.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24587440490722656,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "6899c993-24f1-4793-b9c4-806911971c98",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T05:43:46.081938+00:00",
+    "image": "ml/feedback/missing_building/images/6899c993-24f1-4793-b9c4-806911971c98.png",
+    "mask": "ml/feedback/missing_building/masks/6899c993-24f1-4793-b9c4-806911971c98.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24336910247802734,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "d479a646-6f9b-4ccb-9088-22a8d2a55a4e",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T05:44:01.767373+00:00",
+    "image": "ml/feedback/missing_building/images/d479a646-6f9b-4ccb-9088-22a8d2a55a4e.png",
+    "mask": "ml/feedback/missing_building/masks/d479a646-6f9b-4ccb-9088-22a8d2a55a4e.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24434471130371094,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "c736a852-e224-424a-b9d5-45166751ae48",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T05:44:12.437126+00:00",
+    "image": "ml/feedback/missing_building/images/c736a852-e224-424a-b9d5-45166751ae48.png",
+    "mask": "ml/feedback/missing_building/masks/c736a852-e224-424a-b9d5-45166751ae48.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24523162841796875,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "e9948054-1f22-427a-9645-366ec212bbc1",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T05:44:20.496299+00:00",
+    "image": "ml/feedback/missing_building/images/e9948054-1f22-427a-9645-366ec212bbc1.png",
+    "mask": "ml/feedback/missing_building/masks/e9948054-1f22-427a-9645-366ec212bbc1.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.2474803924560547,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "1b039d8f-74e6-4d23-8e36-dac7ab3814a5",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T05:44:29.830536+00:00",
+    "image": "ml/feedback/missing_building/images/1b039d8f-74e6-4d23-8e36-dac7ab3814a5.png",
+    "mask": "ml/feedback/missing_building/masks/1b039d8f-74e6-4d23-8e36-dac7ab3814a5.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.2441110610961914,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "691bd55d-256a-44aa-b17b-ddfab5c37df6",
+    "type": "not_a_building",
+    "timestamp": "2026-01-25T05:59:38.399548+00:00",
+    "image": "ml/feedback/not_a_building/images/691bd55d-256a-44aa-b17b-ddfab5c37df6.png",
+    "mask": "ml/feedback/not_a_building/masks/691bd55d-256a-44aa-b17b-ddfab5c37df6.png",
+    "bbox_xyxy": [
+      415,
+      5,
+      479,
+      29
+    ],
+    "mask_coverage": 0.0011758804321289062,
+    "mask_touches_border": true,
+    "aoi_bounds": [
+      89.53550577163696,
+      28.87256236723612,
+      89.54007089138032,
+      28.87684648888841
+    ]
+  },
+  {
+    "id": "43e12242-11cb-492c-8829-32e6a24943df",
+    "type": "not_a_building",
+    "timestamp": "2026-01-25T05:59:43.676633+00:00",
+    "image": "ml/feedback/not_a_building/images/43e12242-11cb-492c-8829-32e6a24943df.png",
+    "mask": "ml/feedback/not_a_building/masks/43e12242-11cb-492c-8829-32e6a24943df.png",
+    "bbox_xyxy": [
+      1012,
+      58,
+      1015,
+      78
+    ],
+    "mask_coverage": 0.000255584716796875,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.53550577163696,
+      28.87256236723612,
+      89.54007089138032,
+      28.87684648888841
+    ]
+  },
+  {
+    "id": "7b9dec92-2b8a-4f2f-b382-bc2ae12fd190",
+    "type": "not_a_building",
+    "timestamp": "2026-01-25T05:59:47.822212+00:00",
+    "image": "ml/feedback/not_a_building/images/7b9dec92-2b8a-4f2f-b382-bc2ae12fd190.png",
+    "mask": "ml/feedback/not_a_building/masks/7b9dec92-2b8a-4f2f-b382-bc2ae12fd190.png",
+    "bbox_xyxy": [
+      816,
+      107,
+      830,
+      108
+    ],
+    "mask_coverage": 0.00026702880859375,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.53550577163696,
+      28.87256236723612,
+      89.54007089138032,
+      28.87684648888841
+    ]
+  },
+  {
+    "id": "d6139897-4e86-45a8-9171-8848ccc0c8c4",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-25T06:05:49.079367+00:00",
+    "image": "ml/feedback/wrong_geometry/images/d6139897-4e86-45a8-9171-8848ccc0c8c4.png",
+    "mask": "ml/feedback/wrong_geometry/masks/d6139897-4e86-45a8-9171-8848ccc0c8c4.png",
+    "bbox_xyxy": [
+      571,
+      776,
+      934,
+      913
+    ],
+    "mask_coverage": 0.05254364013671875,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.53584372997285,
+      28.874641033849514,
+      89.53810483217241,
+      28.875970419168993
+    ]
+  },
+  {
+    "id": "ba39a027-9e27-4c20-908c-48aaf3e5d15e",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-25T06:06:32.022879+00:00",
+    "image": "ml/feedback/wrong_geometry/images/ba39a027-9e27-4c20-908c-48aaf3e5d15e.png",
+    "mask": "ml/feedback/wrong_geometry/masks/ba39a027-9e27-4c20-908c-48aaf3e5d15e.png",
+    "bbox_xyxy": [
+      417,
+      590,
+      664,
+      690
+    ],
+    "mask_coverage": 0.027130126953125,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.5357793569565,
+      28.874648080106283,
+      89.53905165195467,
+      28.876386142182085
+    ]
+  },
+  {
+    "id": "83a909b0-01e3-4f20-a8f3-96e479c5babe",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-25T06:08:42.755205+00:00",
+    "image": "ml/feedback/wrong_geometry/images/83a909b0-01e3-4f20-a8f3-96e479c5babe.png",
+    "mask": "ml/feedback/wrong_geometry/masks/83a909b0-01e3-4f20-a8f3-96e479c5babe.png",
+    "bbox_xyxy": [
+      821,
+      79,
+      977,
+      169
+    ],
+    "mask_coverage": 0.015684127807617188,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.5357793569565,
+      28.8745541299766,
+      89.5400494337082,
+      28.876367352477285
+    ]
+  },
+  {
+    "id": "6e598981-616a-4a6f-b7c3-6683fd4f7ed7",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-25T06:09:10.234950+00:00",
+    "image": "ml/feedback/wrong_geometry/images/6e598981-616a-4a6f-b7c3-6683fd4f7ed7.png",
+    "mask": "ml/feedback/wrong_geometry/masks/6e598981-616a-4a6f-b7c3-6683fd4f7ed7.png",
+    "bbox_xyxy": [
+      822,
+      559,
+      978,
+      653
+    ],
+    "mask_coverage": 0.016330718994140625,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.5357793569565,
+      28.8745541299766,
+      89.5400494337082,
+      28.876367352477285
+    ]
+  },
+  {
+    "id": "a794c34a-d895-449c-a2b3-6fc10e92e290",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:09:34.874055+00:00",
+    "image": "ml/feedback/missing_building/images/a794c34a-d895-449c-a2b3-6fc10e92e290.png",
+    "mask": "ml/feedback/missing_building/masks/a794c34a-d895-449c-a2b3-6fc10e92e290.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24401092529296875,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "8b61e60c-5cc1-45d0-9e4b-eabb38e8f67c",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:09:44.885679+00:00",
+    "image": "ml/feedback/missing_building/images/8b61e60c-5cc1-45d0-9e4b-eabb38e8f67c.png",
+    "mask": "ml/feedback/missing_building/masks/8b61e60c-5cc1-45d0-9e4b-eabb38e8f67c.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24561691284179688,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "63c70f5f-b59e-42f2-bbf6-cc501bd5c309",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:09:58.452861+00:00",
+    "image": "ml/feedback/missing_building/images/63c70f5f-b59e-42f2-bbf6-cc501bd5c309.png",
+    "mask": "ml/feedback/missing_building/masks/63c70f5f-b59e-42f2-bbf6-cc501bd5c309.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24460601806640625,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "7142a120-c542-416a-b28b-10bc164bccce",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:10:18.726188+00:00",
+    "image": "ml/feedback/missing_building/images/7142a120-c542-416a-b28b-10bc164bccce.png",
+    "mask": "ml/feedback/missing_building/masks/7142a120-c542-416a-b28b-10bc164bccce.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24521636962890625,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "7d4c702b-602a-499a-93b5-66c243c5e957",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:10:29.834201+00:00",
+    "image": "ml/feedback/missing_building/images/7d4c702b-602a-499a-93b5-66c243c5e957.png",
+    "mask": "ml/feedback/missing_building/masks/7d4c702b-602a-499a-93b5-66c243c5e957.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24536514282226562,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "ed5a5603-a698-4d26-9f2e-af3e30284424",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:10:38.816125+00:00",
+    "image": "ml/feedback/missing_building/images/ed5a5603-a698-4d26-9f2e-af3e30284424.png",
+    "mask": "ml/feedback/missing_building/masks/ed5a5603-a698-4d26-9f2e-af3e30284424.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24676990509033203,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "ecc21fda-b96f-406d-8c6e-02ed1a3ff7da",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:10:47.107933+00:00",
+    "image": "ml/feedback/missing_building/images/ecc21fda-b96f-406d-8c6e-02ed1a3ff7da.png",
+    "mask": "ml/feedback/missing_building/masks/ecc21fda-b96f-406d-8c6e-02ed1a3ff7da.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24422073364257812,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "e41aedb9-6217-4e37-80e4-fe1f6693fa4b",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:10:56.734069+00:00",
+    "image": "ml/feedback/missing_building/images/e41aedb9-6217-4e37-80e4-fe1f6693fa4b.png",
+    "mask": "ml/feedback/missing_building/masks/e41aedb9-6217-4e37-80e4-fe1f6693fa4b.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.2417316436767578,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "cee10e3d-2b98-43d0-b3f7-b9842e968d88",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:11:07.049898+00:00",
+    "image": "ml/feedback/missing_building/images/cee10e3d-2b98-43d0-b3f7-b9842e968d88.png",
+    "mask": "ml/feedback/missing_building/masks/cee10e3d-2b98-43d0-b3f7-b9842e968d88.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24795246124267578,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "a672c38e-5a8b-41b2-a516-bdf85f4c73d2",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:11:15.879727+00:00",
+    "image": "ml/feedback/missing_building/images/a672c38e-5a8b-41b2-a516-bdf85f4c73d2.png",
+    "mask": "ml/feedback/missing_building/masks/a672c38e-5a8b-41b2-a516-bdf85f4c73d2.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24887371063232422,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "c435f199-2d80-4d59-9ffc-9d11f65006f5",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-25T06:37:21.756387+00:00",
+    "image": "ml/feedback/wrong_geometry/images/c435f199-2d80-4d59-9ffc-9d11f65006f5.png",
+    "mask": "ml/feedback/wrong_geometry/masks/c435f199-2d80-4d59-9ffc-9d11f65006f5.png",
+    "bbox_xyxy": [
+      363,
+      389,
+      537,
+      424
+    ],
+    "mask_coverage": 0.007952690124511719,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.5354950428009,
+      28.872712690284406,
+      89.54006552696228,
+      28.877001503136558
+    ]
+  },
+  {
+    "id": "7e138c17-6f64-4ae0-8dd6-29d4f836912c",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-25T06:37:37.854645+00:00",
+    "image": "ml/feedback/wrong_geometry/images/7e138c17-6f64-4ae0-8dd6-29d4f836912c.png",
+    "mask": "ml/feedback/wrong_geometry/masks/7e138c17-6f64-4ae0-8dd6-29d4f836912c.png",
+    "bbox_xyxy": [
+      385,
+      609,
+      520,
+      636
+    ],
+    "mask_coverage": 0.005290985107421875,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.5354950428009,
+      28.872712690284406,
+      89.54006552696228,
+      28.877001503136558
+    ]
+  },
+  {
+    "id": "05951b5a-804b-4923-884d-9d3e79366cd0",
+    "type": "not_a_building",
+    "timestamp": "2026-01-25T06:37:46.011136+00:00",
+    "image": "ml/feedback/not_a_building/images/05951b5a-804b-4923-884d-9d3e79366cd0.png",
+    "mask": "ml/feedback/not_a_building/masks/05951b5a-804b-4923-884d-9d3e79366cd0.png",
+    "bbox_xyxy": [
+      766,
+      567,
+      985,
+      576
+    ],
+    "mask_coverage": 0.003208160400390625,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.5354950428009,
+      28.872712690284406,
+      89.54006552696228,
+      28.877001503136558
+    ]
+  },
+  {
+    "id": "e114f4dd-faf2-4b20-b5b2-954571ecda84",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:38:00.394501+00:00",
+    "image": "ml/feedback/missing_building/images/e114f4dd-faf2-4b20-b5b2-954571ecda84.png",
+    "mask": "ml/feedback/missing_building/masks/e114f4dd-faf2-4b20-b5b2-954571ecda84.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24713516235351562,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "b54148b8-ad50-46c4-9bfb-c7900d4184b6",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:38:10.110078+00:00",
+    "image": "ml/feedback/missing_building/images/b54148b8-ad50-46c4-9bfb-c7900d4184b6.png",
+    "mask": "ml/feedback/missing_building/masks/b54148b8-ad50-46c4-9bfb-c7900d4184b6.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24748611450195312,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "fdc2df46-7e09-4197-b67e-411fb356ad73",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:38:25.957518+00:00",
+    "image": "ml/feedback/missing_building/images/fdc2df46-7e09-4197-b67e-411fb356ad73.png",
+    "mask": "ml/feedback/missing_building/masks/fdc2df46-7e09-4197-b67e-411fb356ad73.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24507522583007812,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "e8cda82b-23bd-4900-b9c7-f7c8875db686",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:38:43.566018+00:00",
+    "image": "ml/feedback/missing_building/images/e8cda82b-23bd-4900-b9c7-f7c8875db686.png",
+    "mask": "ml/feedback/missing_building/masks/e8cda82b-23bd-4900-b9c7-f7c8875db686.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24692344665527344,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "39f124f9-7c6e-465f-8552-548502237d5d",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:39:00.260510+00:00",
+    "image": "ml/feedback/missing_building/images/39f124f9-7c6e-465f-8552-548502237d5d.png",
+    "mask": "ml/feedback/missing_building/masks/39f124f9-7c6e-465f-8552-548502237d5d.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24622344970703125,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "5446a26a-fbaa-433a-9a4e-a3c07d939843",
+    "type": "missing_building",
+    "timestamp": "2026-01-25T06:39:15.552795+00:00",
+    "image": "ml/feedback/missing_building/images/5446a26a-fbaa-433a-9a4e-a3c07d939843.png",
+    "mask": "ml/feedback/missing_building/masks/5446a26a-fbaa-433a-9a4e-a3c07d939843.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.24285507202148438,
+    "mask_touches_border": false,
+    "aoi_bounds": null
+  },
+  {
+    "id": "189f2a06-7f98-4c4e-bab2-68d2a5065039",
+    "type": "not_a_building",
+    "timestamp": "2026-01-25T08:07:05.218867+00:00",
+    "image": "ml/feedback/not_a_building/images/189f2a06-7f98-4c4e-bab2-68d2a5065039.png",
+    "mask": "ml/feedback/not_a_building/masks/189f2a06-7f98-4c4e-bab2-68d2a5065039.png",
+    "bbox_xyxy": [
+      795,
+      5,
+      915,
+      44
+    ],
+    "mask_coverage": 0.004956245422363281,
+    "mask_touches_border": true,
+    "aoi_bounds": [
+      89.53574717044832,
+      28.874591710038676,
+      89.54001188278198,
+      28.87641432673294
+    ]
+  },
+  {
+    "id": "f5408341-e589-41a0-b6d1-64e7f14d3319",
+    "type": "not_a_building",
+    "timestamp": "2026-01-25T08:31:29.390885+00:00",
+    "image": "ml/feedback/not_a_building/images/f5408341-e589-41a0-b6d1-64e7f14d3319.png",
+    "mask": "ml/feedback/not_a_building/masks/f5408341-e589-41a0-b6d1-64e7f14d3319.png",
+    "bbox_xyxy": [
+      471,
+      902,
+      550,
+      1018
+    ],
+    "mask_coverage": 0.007462501525878906,
+    "mask_touches_border": true,
+    "aoi_bounds": [
+      89.5358517765999,
+      28.87466687012204,
+      89.53811287879945,
+      28.87549362745067
+    ]
+  },
+  {
+    "id": "a5c8e2d7-e4e6-492e-961f-f845c5152fee",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-25T08:31:50.760529+00:00",
+    "image": "ml/feedback/wrong_geometry/images/a5c8e2d7-e4e6-492e-961f-f845c5152fee.png",
+    "mask": "ml/feedback/wrong_geometry/masks/a5c8e2d7-e4e6-492e-961f-f845c5152fee.png",
+    "bbox_xyxy": [
+      567,
+      127,
+      929,
+      356
+    ],
+    "mask_coverage": 0.08480072021484375,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.5358517765999,
+      28.87466687012204,
+      89.53811287879945,
+      28.87549362745067
+    ]
+  },
+  {
+    "id": "6dcd5a1a-8fcf-4fdb-a253-a2f760b4330b",
+    "type": "not_a_building",
+    "timestamp": "2026-01-25T08:32:37.590645+00:00",
+    "image": "ml/feedback/not_a_building/images/6dcd5a1a-8fcf-4fdb-a253-a2f760b4330b.png",
+    "mask": "ml/feedback/not_a_building/masks/6dcd5a1a-8fcf-4fdb-a253-a2f760b4330b.png",
+    "bbox_xyxy": [
+      5,
+      563,
+      90,
+      1018
+    ],
+    "mask_coverage": 0.018327713012695312,
+    "mask_touches_border": true,
+    "aoi_bounds": [
+      89.53802168369295,
+      28.87464573135408,
+      89.54004138708116,
+      28.875517114778656
+    ]
+  },
+  {
+    "id": "b2415af4-7c51-47e3-9e8c-b9aed4145931",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-25T08:33:52.731643+00:00",
+    "image": "ml/feedback/wrong_geometry/images/b2415af4-7c51-47e3-9e8c-b9aed4145931.png",
+    "mask": "ml/feedback/wrong_geometry/masks/b2415af4-7c51-47e3-9e8c-b9aed4145931.png",
+    "bbox_xyxy": [
+      802,
+      224,
+      963,
+      281
+    ],
+    "mask_coverage": 0.010972976684570312,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.53571498394012,
+      28.873736760263633,
+      89.54011380672456,
+      28.876423721581514
+    ]
+  },
+  {
+    "id": "bf4a813e-0fb1-4434-a0ae-778f0b0893bb",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-26T12:21:24.991743+00:00",
+    "image": "ml/feedback/wrong_geometry/images/bf4a813e-0fb1-4434-a0ae-778f0b0893bb.png",
+    "mask": "ml/feedback/wrong_geometry/masks/bf4a813e-0fb1-4434-a0ae-778f0b0893bb.png",
+    "bbox_xyxy": [
+      574,
+      668,
+      942,
+      875
+    ],
+    "mask_coverage": 0.07787799835205078,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.53585445880891,
+      28.875075552123786,
+      89.53808337450029,
+      28.875975116613457
+    ]
+  },
+  {
+    "id": "87230cbc-15c3-4f4f-896e-c25c3987ca79",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-26T12:23:45.901038+00:00",
+    "image": "ml/feedback/wrong_geometry/images/87230cbc-15c3-4f4f-896e-c25c3987ca79.png",
+    "mask": "ml/feedback/wrong_geometry/masks/87230cbc-15c3-4f4f-896e-c25c3987ca79.png",
+    "bbox_xyxy": [
+      329,
+      299,
+      487,
+      447
+    ],
+    "mask_coverage": 0.013066291809082031,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.51631188392639,
+      28.88586511490888,
+      89.52174067497255,
+      28.89053382510329
+    ]
+  },
+  {
+    "id": "e74765fb-fe47-464a-9da7-91b19b8a3226",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-26T12:24:05.429607+00:00",
+    "image": "ml/feedback/wrong_geometry/images/e74765fb-fe47-464a-9da7-91b19b8a3226.png",
+    "mask": "ml/feedback/wrong_geometry/masks/e74765fb-fe47-464a-9da7-91b19b8a3226.png",
+    "bbox_xyxy": [
+      720,
+      280,
+      879,
+      429
+    ],
+    "mask_coverage": 0.013136863708496094,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.51631188392639,
+      28.88586511490888,
+      89.52174067497255,
+      28.89053382510329
+    ]
+  },
+  {
+    "id": "ab86bebc-bc58-4bcd-b5a4-92609325ae82",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-26T12:24:24.231217+00:00",
+    "image": "ml/feedback/wrong_geometry/images/ab86bebc-bc58-4bcd-b5a4-92609325ae82.png",
+    "mask": "ml/feedback/wrong_geometry/masks/ab86bebc-bc58-4bcd-b5a4-92609325ae82.png",
+    "bbox_xyxy": [
+      412,
+      776,
+      569,
+      926
+    ],
+    "mask_coverage": 0.012974739074707031,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.51631188392639,
+      28.88586511490888,
+      89.52174067497255,
+      28.89053382510329
+    ]
+  },
+  {
+    "id": "26e2da98-d095-4eaa-83f3-471410878b3d",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-26T12:24:41.595156+00:00",
+    "image": "ml/feedback/wrong_geometry/images/26e2da98-d095-4eaa-83f3-471410878b3d.png",
+    "mask": "ml/feedback/wrong_geometry/masks/26e2da98-d095-4eaa-83f3-471410878b3d.png",
+    "bbox_xyxy": [
+      625,
+      474,
+      757,
+      583
+    ],
+    "mask_coverage": 0.006608009338378906,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.51631188392639,
+      28.88586511490888,
+      89.52174067497255,
+      28.89053382510329
+    ]
+  },
+  {
+    "id": "f4d22c4c-7179-43aa-9bf4-3b3ed6a411a2",
+    "type": "not_a_building",
+    "timestamp": "2026-01-26T15:36:41.062211+00:00",
+    "image": "ml/feedback/not_a_building/images/f4d22c4c-7179-43aa-9bf4-3b3ed6a411a2.png",
+    "mask": "ml/feedback/not_a_building/masks/f4d22c4c-7179-43aa-9bf4-3b3ed6a411a2.png",
+    "bbox_xyxy": [
+      649,
+      857,
+      726,
+      862
+    ],
+    "mask_coverage": 0.0008907318115234375,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.53571498394012,
+      28.872712690284406,
+      89.54007625579834,
+      28.87641902415733
+    ]
+  },
+  {
+    "id": "2db679c6-da6a-4665-ae0e-f2970ecc1447",
+    "type": "not_a_building",
+    "timestamp": "2026-01-26T15:36:46.538416+00:00",
+    "image": "ml/feedback/not_a_building/images/2db679c6-da6a-4665-ae0e-f2970ecc1447.png",
+    "mask": "ml/feedback/not_a_building/masks/2db679c6-da6a-4665-ae0e-f2970ecc1447.png",
+    "bbox_xyxy": [
+      790,
+      5,
+      903,
+      21
+    ],
+    "mask_coverage": 0.0018625259399414062,
+    "mask_touches_border": true,
+    "aoi_bounds": [
+      89.53571498394012,
+      28.872712690284406,
+      89.54007625579834,
+      28.87641902415733
+    ]
   }
 ]

@@ -125,6 +125,7 @@ MIN_AOI_FOR_DIRECT_YOLO = 256   # if AOI smaller than this, don't trust single-s
 # --------------------------------------------------
 #BASE_TIF = "data/processed/30cm_test/pneo4_30cm_3857_cog.tif"
 BASE_TIF = "data/data/processed/phr1a_20210227_rgb_3857_cog.tif"
+
 AOI_TIF = "ml/aoi.tif"
 
 OUT_DIR = "ml/output"
@@ -158,7 +159,7 @@ sam.to(device=device, dtype=torch.float32)
 sam.eval()
 
 #decoder_ckpt = "ml/sam_training/checkpoints/sam_decoder_finetuned.pth.epoch12.pth"
-decoder_ckpt="SAM_TRAINED_MODEL/sam_decoder_finetuned.pth.epoch16.pth"
+decoder_ckpt="SAM_TRAINED_MODEL/sam_decoder_finetuned.pth.epoch15.pth"
 sam.mask_decoder.load_state_dict(torch.load(decoder_ckpt, map_location=device))
 logging.info("Fine-tuned SAM decoder loaded")
 
@@ -247,7 +248,7 @@ def predict_mask_twopass_union(predictor, x1p, y1p, x2p, y2p, yconf, expand_scal
     Return: union_mask_uint8, combined_score, min_area_for_original_box
     Assumes predictor.set_image(...) already called for current image.
     """
-    H, W = predictor.input_size  # (H, W) for current image in SAM predictor
+    H, W = predictor.original_size  # (H, W) for current image in SAM predictor
     # NOTE: predictor.input_size exists in SAM predictor; if not, use image shape you already have.
     # If this ever fails, replace with H,W from the current img you have in scope.
 
@@ -579,137 +580,7 @@ def osm_height_from_tags(osm_row):
 
 
 
-# def estimate_height_from_shadow(poly, img_rgb,transform, raster_crs):
-#     """
-#     Estimate building height from shadow length using solar geometry.
-#     poly        : building polygon in raster CRS
-#     img_rgb     : RGB numpy image (H,W,3)
-#     raster_crs  : CRS of raster (used only for reprojection safety)
 
-#     Returns height in meters or None.
-#     """
-
-#     #logging.info("ESTIMATE HEIGHT FROM SHADOW CALLED")
-#     logging.info("Shadow height estimation invoked")
-
-#     try:
-#         # --------------------------------------------------
-#         # 1️⃣ Centroid → lat/lon
-#         # --------------------------------------------------
-#         gdf = gpd.GeoSeries([poly], crs=raster_crs).to_crs(epsg=4326)
-#         lon, lat = gdf.iloc[0].centroid.xy[0][0], gdf.iloc[0].centroid.xy[1][0]
-
-#         ts = datetime.fromisoformat(IMAGE_ACQ_TIME)
-#         loc = LocationInfo(latitude=lat, longitude=lon)
-
-#         print("Solar elevation:", elevation(loc.observer, ts))
-
-#         sun_elev = elevation(loc.observer, ts)
-#         sun_az = azimuth(loc.observer, ts)
-
-#         # Too low sun = unreliable
-#         if sun_elev < 12:
-#             return None
-
-#         # Shadow direction (opposite sun)
-#         theta = math.radians((sun_az + 180) % 360)
-#         #dx, dy = math.cos(theta), math.sin(theta)
-#         dx = math.sin(theta)
-#         dy = -math.cos(theta)
-
-
-#         # --------------------------------------------------
-#         # 2️⃣ Rasterize building mask
-#         # --------------------------------------------------
-#         h, w = img_rgb.shape[:2]
-
-#         from rasterio.features import rasterize
-#         #from rasterio.transform import from_bounds
-
-#         minx, miny, maxx, maxy = poly.bounds
-#         #transform = from_bounds(minx, miny, maxx, maxy, w, h)
-
-#         building_mask = rasterize(
-#             [(poly, 1)],
-#             out_shape=(h, w),
-#             transform=transform,
-#             fill=0,
-#             dtype=np.uint8
-#         )
-
-#         if building_mask.sum() < 50:
-#             return None
-
-#         # --------------------------------------------------
-#         # 3️⃣ Extract building edge pixels
-#         # --------------------------------------------------
-#         edges = cv2.Canny(building_mask * 255, 50, 150)
-#         ys, xs = np.where(edges > 0)
-
-#         if len(xs) < 20:
-#             return None
-
-#         # --------------------------------------------------
-#         # 4️⃣ Shadow probing along sun direction
-#         # --------------------------------------------------
-#         gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
-
-#         pixel_size_m = abs(transform.a)
-
-#         max_shadow_px = 0
-#         shadow_pixels = []
-
-#         for x0, y0 in zip(xs, ys):
-#             max_steps = int(40 / pixel_size_m)  # max 40 meters
-#             for step in range(1, max_steps):
-#                 x = int(x0 + dx * step)
-#                 y = int(y0 + dy * step)
-
-#                 if x < 0 or y < 0 or x >= w or y >= h:
-#                     break
-
-#                 # Stop when shadow ends (bright ground)
-#                 if gray[y, x] > np.percentile(gray, 50):
-#                     break
-
-#                 #max_shadow_px = max(max_shadow_px, step)
-#                 max_shadow_px = max(max_shadow_px, step)
-
-#                 # store shadow pixel world coords
-#                 wx, wy = rasterio.transform.xy(transform, y, x, offset="center")
-#                 shadow_pixels.append((wx, wy))
-
-#         if max_shadow_px < 6:
-#             return None
-
-#         if len(shadow_pixels) < 10:
-#             return None
-
-#         shadow_poly = Polygon(shadow_pixels).convex_hull
-#         if not shadow_poly.is_valid or shadow_poly.area < 1.0:
-#             return None
-
-#         # --------------------------------------------------
-#         # 5️⃣ Height calculation
-#         # --------------------------------------------------
-#         shadow_len_m = max_shadow_px * pixel_size_m
-#         height = shadow_len_m * math.tan(math.radians(sun_elev))
-
-#         if not np.isfinite(height):
-#             return None
-
-#         return {
-#             "height": float(np.clip(height, 3.0, 80.0)),
-#             "shadow_length_m": shadow_len_m,
-#             "sun_azimuth": sun_az,
-#             "shadow_polygon": shadow_poly
-#         }
-
-
-
-#     except Exception as e:
-#         logging.debug("Shadow height estimation failed: %s", e)
-#         return None
 
 
 def directional_halfplane_filter(shadow_mask, building_mask, dx, dy):
@@ -781,228 +652,12 @@ def keep_shadow_connected_to_building(shadow_mask, building_mask, seed_dilate=3)
 
     return keep
 
-# def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
-#     logging.info("Shadow height estimation invoked")
 
-#     try:
-#         # 1) centroid -> lat/lon for astral
-#         gdf = gpd.GeoSeries([poly], crs=raster_crs).to_crs(epsg=4326)
-#         lon, lat = gdf.iloc[0].centroid.x, gdf.iloc[0].centroid.y
-
-#         ts = datetime.fromisoformat(IMAGE_ACQ_TIME)
-#         loc = LocationInfo(latitude=lat, longitude=lon)
-
-#         sun_elev = elevation(loc.observer, ts)
-#         sun_az   = azimuth(loc.observer, ts)
-
-#         if sun_elev < 12:
-#             return None
-
-#         # 2) shadow direction in image coords
-#         theta = math.radians((sun_az + 180) % 360)
-#         dx = math.sin(theta)
-#         dy = -math.cos(theta)
-
-#         h, w = img_rgb.shape[:2]
-
-#         # 3) rasterize building footprint -> building_mask
-#         from rasterio.features import rasterize
-#         building_mask = rasterize(
-#             [(poly, 1)],
-#             out_shape=(h, w),
-#             transform=transform,
-#             fill=0,
-#             dtype=np.uint8
-#         )
-
-#         if building_mask.sum() < 50:
-#             return None
-
-#         # 4) boundary pixels
-#         edges = cv2.Canny(building_mask * 255, 50, 150)
-#         ys, xs = np.where(edges > 0)
-#         if len(xs) < 20:
-#             return None
-
-#         # 5) compute outward normals using distance transform on the OUTSIDE
-#         outside = (building_mask == 0).astype(np.uint8)
-#         # distance to nearest building pixel (in the outside region)
-#         dist = cv2.distanceTransform(outside, cv2.DIST_L2, 3)
-
-#         # gradient approx (points outward from building into outside)
-#         gx = cv2.Sobel(dist, cv2.CV_32F, 1, 0, ksize=3)
-#         gy = cv2.Sobel(dist, cv2.CV_32F, 0, 1, ksize=3)
-
-#         # 6) grayscale and threshold reference
-#         gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
-#         thr = np.percentile(gray, 50)
-
-#         pixel_size_m = abs(transform.a)
-#         max_steps = int(40 / pixel_size_m)
-
-#         shadow_mask = np.zeros((h, w), dtype=np.uint8)
-#         max_shadow_px = 0
-
-#         for x0, y0 in zip(xs, ys):
-#             # outward normal at this boundary pixel
-#             nx = float(gx[y0, x0])
-#             ny = float(gy[y0, x0])
-#             nrm = (nx * nx + ny * ny) ** 0.5
-#             if nrm < 1e-6:
-#                 continue
-#             nx /= nrm
-#             ny /= nrm
-
-#             # keep only shadow-facing edge pixels:
-#             # dot(normal, shadow_dir) > 0 means this edge "faces" the shadow direction
-#             if (nx * dx + ny * dy) < 0.25:
-#                 continue
-
-#             # march along shadow direction
-#             left_building = False
-#             local_len = 0
-
-#             for step in range(1, max_steps):
-#                 x = int(round(x0 + dx * step))
-#                 y = int(round(y0 + dy * step))
-#                 if x < 0 or y < 0 or x >= w or y >= h:
-#                     break
-
-#                 # ensure we don't count pixels inside the building
-#                 if building_mask[y, x] == 1:
-#                     continue
-#                 else:
-#                     left_building = True
-
-#                 if not left_building:
-#                     continue
-
-#                 # stop condition: brightness indicates end of shadow
-#                 if gray[y, x] > thr:
-#                     break
-
-#                 shadow_mask[y, x] = 1
-#                 local_len = step
-
-#             if local_len > max_shadow_px:
-#                 max_shadow_px = local_len
-
-#         # remove any accidental overlap with building
-#         shadow_mask[building_mask == 1] = 0
-
-#         if max_shadow_px < 6 or shadow_mask.sum() < 10:
-#             return None
-
-#         # 7) polygonize shadow_mask (no convex hull)
-#         # use contours
-#         cnts, _ = cv2.findContours(shadow_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-#         if not cnts:
-#             return None
-
-#         # pick largest shadow blob
-#         cnt = max(cnts, key=cv2.contourArea)
-#         if cv2.contourArea(cnt) < 5:
-#             return None
-
-#         cnt = cnt.reshape(-1, 2)
-#         coords = []
-#         for (cx, cy) in cnt:
-#             wx, wy = rasterio.transform.xy(transform, int(cy), int(cx), offset="center")
-#             coords.append((wx, wy))
-
-#         shadow_poly = Polygon(coords)
-#         if not shadow_poly.is_valid:
-#             shadow_poly = shadow_poly.buffer(0)
-
-#         if shadow_poly.is_empty or shadow_poly.area < 1.0:
-#             return None
-
-#         # 8) HARD GUARANTEE: shadow does not include building
-#         shadow_poly = shadow_poly.difference(poly)
-#         if shadow_poly.is_empty:
-#             return None
-#         if shadow_poly.geom_type == "MultiPolygon":
-#             shadow_poly = max(shadow_poly.geoms, key=lambda g: g.area)
-
-#         # 9) height math
-#         shadow_len_m = max_shadow_px * pixel_size_m
-#         height = shadow_len_m * math.tan(math.radians(sun_elev))
-#         if not np.isfinite(height):
-#             return None
-
-#         return {
-#             "height": float(np.clip(height, 3.0, 80.0)),
-#             "shadow_length_m": float(shadow_len_m),
-#             "sun_azimuth": float(sun_az),
-#             "shadow_polygon": shadow_poly
-#         }
-
-#     except Exception as e:
-#         logging.debug("Shadow height estimation failed: %s", e)
-#         return None
 
 
 def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
     logging.info("Shadow height estimation invoked")
 
-    # ---------- helpers (safe inline; remove if you already have them globally) ----------
-    def keep_shadow_connected_to_building(shadow_mask, building_mask, seed_dilate=1):
-        k = np.ones((3, 3), np.uint8)
-        dil = cv2.dilate(building_mask.astype(np.uint8), k, iterations=int(seed_dilate))
-
-        # thin band just outside building
-        seed_band = (dil > 0).astype(np.uint8)
-        seed_band[building_mask > 0] = 0
-
-        # shadow pixels that touch that band
-        seeds = (shadow_mask > 0) & (seed_band > 0)
-        if not np.any(seeds):
-            return shadow_mask
-
-        num, labels = cv2.connectedComponents(shadow_mask.astype(np.uint8), connectivity=8)
-
-        keep = np.zeros_like(shadow_mask, dtype=np.uint8)
-        seed_labels = np.unique(labels[seeds])
-        for lab in seed_labels:
-            if lab == 0:
-                continue
-            keep[labels == lab] = 1
-        return keep
-
-    def directional_halfplane_filter(shadow_mask, building_mask, dx, dy):
-        ys, xs = np.where(building_mask > 0)
-        if len(xs) == 0:
-            return shadow_mask
-
-        cx = xs.mean()
-        cy = ys.mean()
-
-        yy, xx = np.where(shadow_mask > 0)
-        if len(xx) == 0:
-            return shadow_mask
-
-        proj = (xx - cx) * dx + (yy - cy) * dy
-        out = np.zeros_like(shadow_mask, dtype=np.uint8)
-        out[yy[proj > 0], xx[proj > 0]] = 1
-        return out
-
-    def morph_cleanup(shadow_mask, open_iter=1, close_iter=1, min_area=150):
-        k = np.ones((3, 3), np.uint8)
-        m = shadow_mask.astype(np.uint8)
-
-        # remove spikes/noise
-        if open_iter and open_iter > 0:
-            m = cv2.morphologyEx(m, cv2.MORPH_OPEN, k, iterations=int(open_iter))
-        # fill tiny gaps
-        if close_iter and close_iter > 0:
-            m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k, iterations=int(close_iter))
-
-        num, labels, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
-        out = np.zeros_like(m)
-        for i in range(1, num):
-            if stats[i, cv2.CC_STAT_AREA] >= int(min_area):
-                out[labels == i] = 1
-        return out
     # -------------------------------------------------------------------------------
 
     try:
@@ -1055,18 +710,36 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
 
         # 6) grayscale and threshold reference
         gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
-        thr = np.percentile(gray, 50)
+        #thr = np.percentile(gray, 50)
+
+        # Sun-facing reference (bright side)
+        ring = cv2.dilate(building_mask, np.ones((7,7),np.uint8), 2)
+        ring[building_mask == 1] = 0
+
+        ys_r, xs_r = np.where(ring > 0)
+        cx = xs.mean(); cy = ys.mean()
+        proj = (xs_r - cx) * dx + (ys_r - cy) * dy
+
+        sun_side = proj < 0
+        if np.sum(sun_side) > 30:
+            ref = np.median(gray[ys_r[sun_side], xs_r[sun_side]])
+            thr = ref * 0.85
+        else:
+            thr = np.percentile(gray, 50)
 
         pixel_size_m = abs(transform.a)
         if pixel_size_m <= 0:
             return None
         max_steps = int(40 / pixel_size_m)
 
+        # shadow_mask = np.zeros((h, w), dtype=np.uint8)
+        # max_shadow_px = 0
+
         shadow_mask = np.zeros((h, w), dtype=np.uint8)
-        max_shadow_px = 0
+        shadow_lengths = []   # <-- NEW
 
         for x0, y0 in zip(xs, ys):
-            # outward normal
+
             nx = float(gx[y0, x0])
             ny = float(gy[y0, x0])
             nrm = (nx * nx + ny * ny) ** 0.5
@@ -1075,8 +748,7 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
             nx /= nrm
             ny /= nrm
 
-            # keep only shadow-facing edge pixels
-            if (nx * dx + ny * dy) < 0.25:
+            if (nx * dx + ny * dy) < 0.55:
                 continue
 
             local_len = 0
@@ -1087,20 +759,23 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
                 if x < 0 or y < 0 or x >= w or y >= h:
                     break
 
-                # never include building pixels
                 if building_mask[y, x] == 1:
                     continue
 
-                # stop when bright => end of shadow
                 if gray[y, x] > thr:
                     break
 
                 shadow_mask[y, x] = 1
                 local_len = step
 
-            if local_len > max_shadow_px:
-                max_shadow_px = local_len
+            if local_len > 0:
+                shadow_lengths.append(local_len)
 
+        
+        if len(shadow_lengths) < 25:
+            return None
+
+        max_shadow_px = int(np.percentile(shadow_lengths, 80))
         # Remove any accidental overlap
         shadow_mask[building_mask == 1] = 0
 
@@ -1123,6 +798,55 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
         shadow_mask[building_mask == 1] = 0
         if int(shadow_mask.sum()) < 10:
             return None
+
+
+
+        # ================= SHADOW CORRIDOR (WIDTH LIMIT) =================
+
+        # Seed = only shadow-facing edge pixels
+        seed = np.zeros((h, w), np.uint8)
+
+        for x0, y0 in zip(xs, ys):
+            nx = float(gx[y0, x0])
+            ny = float(gy[y0, x0])
+            nrm = (nx*nx + ny*ny) ** 0.5
+            if nrm < 1e-6:
+                continue
+            nx /= nrm
+            ny /= nrm
+
+            # STRONGER shadow-facing condition
+            if (nx * dx + ny * dy) < 0.55:
+                continue
+
+            seed[y0, x0] = 1
+
+        # Thin edge band only
+        seed = cv2.dilate(seed, np.ones((3,3), np.uint8), 1)
+
+        # Sweep seed forward along shadow direction
+        corridor = np.zeros((h, w), np.uint8)
+
+        for step in range(1, max_shadow_px + 1):
+            M = np.float32([[1, 0, dx * step],
+                            [0, 1, dy * step]])
+            shifted = cv2.warpAffine(
+                seed,
+                M,
+                (w, h),
+                flags=cv2.INTER_NEAREST,
+                borderValue=0
+            )
+            corridor |= shifted
+
+        # Corridor must not include building
+        corridor[building_mask == 1] = 0
+
+        # Apply width constraint
+        shadow_mask &= corridor
+
+        # ================================================================
+
         # ============================================================================
 
         # 7) polygonize shadow_mask
@@ -2232,6 +1956,9 @@ def detect_buildings(bounds):
                         best = best_preclip
                         best_clipped_area = best_area
 
+
+                    box_area = max(1, (x2p - x1p) * (y2p - y1p))
+
                     if best_clipped_area < min_area:
                         DROP["min_area"] += 1
                         continue
@@ -2245,15 +1972,8 @@ def detect_buildings(bounds):
                     all_buildings.append((poly, DEFAULT_HEIGHT, final_conf))
 
 
-                    if poly is None:
-                        DROP["poly_none"] += 1
-                        continue
-
                     # if not is_airport_building(poly, relaxed=True):
                     #     continue
-
-                    final_conf = 0.6 * best_score + 0.4 * yconf
-                    all_buildings.append((poly, DEFAULT_HEIGHT, final_conf))
 
             # ✅ put this here: end of ONE TILE
             logging.info(
@@ -2447,99 +2167,151 @@ def detect_buildings(bounds):
 
             box = np.array([x1p, y1p, x2p, y2p], dtype=np.float32)
 
-            masks, scores, _ = predictor.predict(
-                box=box,
-                multimask_output=True
+            # masks, scores, _ = predictor.predict(
+            #     box=box,
+            #     multimask_output=True
+            # )
+
+            # box_area = (x2p - x1p) * (y2p - y1p)
+
+            # min_area = max(20, int(0.002 * box_area))     # instead of hard 80
+            # #max_fill = 0.95 if box_area < 5000 else 0.90   # allow fuller masks on small boxes
+            # max_fill = adaptive_max_fill(box_area, bw, bh, yconf)
+
+            # best = None
+            # best_score = -1.0
+
+            # for m, s in zip(masks, scores):
+            #     area = int(m.sum())
+
+            #     logging.info(
+            #         f"SAM mask: area={area}, box_area={box_area}, "
+            #         f"min_area={min_area}, max_allowed={int(max_fill*box_area)}"
+            #     )
+            #     if area < min_area:
+            #         continue
+                
+            #     fill_ratio = area / max(1, box_area)
+            #     too_full = fill_ratio > max_fill
+
+
+            #     # allow very full masks if SAM+YOLO confident
+            #     if too_full and not (yconf >= 0.80 and float(s) >= 0.85 and fill_ratio <= 0.995):
+            #         continue
+
+            #     s = float(s)
+            #     if s > best_score:
+            #         best = m
+            #         best_score = s
+
+            # if best is None:
+            #     logging.info(
+            #         f"SAM: no mask passed filters (min_area={min_area}, max_fill={max_fill}, "
+            #         f"box_area={box_area}, yconf={yconf:.3f})"
+            #     )
+            #     sam_polys = []
+            #     RECALL["sam_drop"] += 1
+            # else:
+            #     RECALL["sam_ok"] += 1
+            #     #poly = mask_to_polygon({"segmentation": best.astype(np.uint8)}, transform)
+            #     #sam_polys = [(poly, best_score)] if poly is not None else []
+
+
+            #     best = best.astype(np.uint8)
+            #     best_preclip = best.copy()   # <-- add this
+            #     best_area = int(best.sum())
+            #     fill = best_area / max(box_area, 1)
+            #     logging.info(f"SAM best(pre-clip): area={best_area}, box_area={box_area}, fill={fill:.3f}, score={best_score:.3f}")
+
+
+            #     box_mask = np.zeros(best.shape, dtype=np.uint8)
+
+            #     MIN_PAD_PX = 16
+            #     MAX_PAD_PX = 64
+            #     CLIP_EXTRA_PX = 12
+
+            #     pad = int(0.08 * min(bw, bh))
+            #     pad = max(MIN_PAD_PX, min(MAX_PAD_PX, pad))
+
+            #     y1c = max(0, int(y1p - pad - CLIP_EXTRA_PX))
+            #     x1c = max(0, int(x1p - pad - CLIP_EXTRA_PX))
+            #     y2c = min(best.shape[0] - 1, int(y2p + pad + CLIP_EXTRA_PX))
+            #     x2c = min(best.shape[1] - 1, int(x2p + pad + CLIP_EXTRA_PX))
+
+            #     box_mask[y1c:y2c+1, x1c:x2c+1] = 1
+            #     best = (best & box_mask)
+            #     best_clipped_area = int(best.sum())
+
+            #     # 🔒 one-line area-loss guard (prevents half roof loss)
+            #     if best_clipped_area < 0.85 * best_area:
+            #         best = best_preclip
+            #         best_clipped_area = best_area  # keep stats consistent
+
+            #     kept_ratio = best_clipped_area / max(best_area, 1)
+            #     logging.info(f"SAM clipped: area={best_clipped_area}, kept_ratio={kept_ratio:.3f}")
+
+            #     if kept_ratio < 0.85:
+            #         logging.info(f"SAM clip too aggressive (kept_ratio={kept_ratio:.3f}) -> relaxing clip")
+            #         # relax only the clip box (not YOLO)
+            #         relax = 24  # px
+            #         y1c = max(0, y1c - relax); x1c = max(0, x1c - relax)
+            #         y2c = min(best.shape[0]-1, y2c + relax); x2c = min(best.shape[1]-1, x2c + relax)
+
+            #         box_mask = np.zeros(best.shape, dtype=np.uint8)
+            #         box_mask[y1c:y2c+1, x1c:x2c+1] = 1
+            #         best = best & box_mask
+
+            # --- Two-pass SAM (tight + expanded) to reduce half-roof clipping ---
+            union_mask, best_score, min_area, (ex1, ey1, ex2, ey2) = predict_mask_twopass_union(
+                predictor,
+                x1p, y1p, x2p, y2p,
+                yconf=yconf,
+                expand_scale=1.28
             )
 
-            box_area = (x2p - x1p) * (y2p - y1p)
-
-            min_area = max(20, int(0.002 * box_area))     # instead of hard 80
-            #max_fill = 0.95 if box_area < 5000 else 0.90   # allow fuller masks on small boxes
-            max_fill = adaptive_max_fill(box_area, bw, bh, yconf)
-
-            best = None
-            best_score = -1.0
-
-            for m, s in zip(masks, scores):
-                area = int(m.sum())
-
+            if union_mask is None:
                 logging.info(
-                    f"SAM mask: area={area}, box_area={box_area}, "
-                    f"min_area={min_area}, max_allowed={int(max_fill*box_area)}"
-                )
-                if area < min_area:
-                    continue
-                
-                fill_ratio = area / max(1, box_area)
-                too_full = fill_ratio > max_fill
-
-
-                # allow very full masks if SAM+YOLO confident
-                if too_full and not (yconf >= 0.80 and float(s) >= 0.85 and fill_ratio <= 0.995):
-                    continue
-
-                s = float(s)
-                if s > best_score:
-                    best = m
-                    best_score = s
-
-            if best is None:
-                logging.info(
-                    f"SAM: no mask passed filters (min_area={min_area}, max_fill={max_fill}, "
-                    f"box_area={box_area}, yconf={yconf:.3f})"
+                    f"[AOI] SAM: no mask passed filters (two-pass) "
+                    f"(box_area={(x2p-x1p)*(y2p-y1p)}, yconf={yconf:.3f})"
                 )
                 sam_polys = []
                 RECALL["sam_drop"] += 1
             else:
                 RECALL["sam_ok"] += 1
-                #poly = mask_to_polygon({"segmentation": best.astype(np.uint8)}, transform)
-                #sam_polys = [(poly, best_score)] if poly is not None else []
 
-
-                best = best.astype(np.uint8)
-                best_preclip = best.copy()   # <-- add this
+                best = union_mask.astype(np.uint8)
+                best_preclip = best.copy()
                 best_area = int(best.sum())
-                fill = best_area / max(box_area, 1)
-                logging.info(f"SAM best(pre-clip): area={best_area}, box_area={box_area}, fill={fill:.3f}, score={best_score:.3f}")
 
-
-                box_mask = np.zeros(best.shape, dtype=np.uint8)
-
+                # --- Clip around EXPANDED box (loose), with area-loss guard ---
                 MIN_PAD_PX = 16
-                MAX_PAD_PX = 64
-                CLIP_EXTRA_PX = 12
+                MAX_PAD_PX = 96
+                CLIP_EXTRA_PX = 16
 
-                pad = int(0.08 * min(bw, bh))
+                bw = x2p - x1p
+                bh = y2p - y1p
+                pad = int(0.10 * min(bw, bh))
                 pad = max(MIN_PAD_PX, min(MAX_PAD_PX, pad))
 
-                y1c = max(0, int(y1p - pad - CLIP_EXTRA_PX))
-                x1c = max(0, int(x1p - pad - CLIP_EXTRA_PX))
-                y2c = min(best.shape[0] - 1, int(y2p + pad + CLIP_EXTRA_PX))
-                x2c = min(best.shape[1] - 1, int(x2p + pad + CLIP_EXTRA_PX))
+                H, W = img_rgb.shape[:2]
+                x1c = max(0, int(ex1 - pad - CLIP_EXTRA_PX))
+                y1c = max(0, int(ey1 - pad - CLIP_EXTRA_PX))
+                x2c = min(W - 1, int(ex2 + pad + CLIP_EXTRA_PX))
+                y2c = min(H - 1, int(ey2 + pad + CLIP_EXTRA_PX))
 
+                box_mask = np.zeros(best.shape, dtype=np.uint8)
                 box_mask[y1c:y2c+1, x1c:x2c+1] = 1
-                best = (best & box_mask)
+
+                best = best & box_mask
                 best_clipped_area = int(best.sum())
 
-                # 🔒 one-line area-loss guard (prevents half roof loss)
+                # 🔒 area-loss guard
                 if best_clipped_area < 0.85 * best_area:
                     best = best_preclip
-                    best_clipped_area = best_area  # keep stats consistent
+                    best_clipped_area = best_area
+                box_area = max(1, (x2p - x1p) * (y2p - y1p))
 
-                kept_ratio = best_clipped_area / max(best_area, 1)
-                logging.info(f"SAM clipped: area={best_clipped_area}, kept_ratio={kept_ratio:.3f}")
-
-                if kept_ratio < 0.85:
-                    logging.info(f"SAM clip too aggressive (kept_ratio={kept_ratio:.3f}) -> relaxing clip")
-                    # relax only the clip box (not YOLO)
-                    relax = 24  # px
-                    y1c = max(0, y1c - relax); x1c = max(0, x1c - relax)
-                    y2c = min(best.shape[0]-1, y2c + relax); x2c = min(best.shape[1]-1, x2c + relax)
-
-                    box_mask = np.zeros(best.shape, dtype=np.uint8)
-                    box_mask[y1c:y2c+1, x1c:x2c+1] = 1
-                    best = best & box_mask
+                # IMPORTANT: keep your existing downstream indentation unchanged
 
                 if int(best.sum()) < min_area:
                     sam_polys = []
@@ -2813,10 +2585,10 @@ def detect_buildings(bounds):
 
         ## disabling height calculation for now so that we can focus on footprinting first, but after footprint height is next priority
         
-        # if height is None and conf >= 0.75:
-        #     shadow_info = estimate_height_from_shadow(poly, img_rgb, transform, raster_crs)
-        #     if shadow_info:
-        #         height = shadow_info["height"]
+        if height is None and conf >= 0.75:
+            shadow_info = estimate_height_from_shadow(poly, img_rgb, transform, raster_crs)
+            if shadow_info:
+                height = shadow_info["height"]
 
 
         # 3️⃣ Fallback
@@ -2939,18 +2711,32 @@ def detect_buildings(bounds):
     # (Keep your original final_buildings list, but filter by AOI now)
     from shapely.geometry import box as shp_box
     aoi_poly_4326 = shp_box(*bounds)
+    aoi_poly_raster = gpd.GeoSeries([aoi_poly_4326], crs="EPSG:4326").to_crs(raster_crs).iloc[0]
+
+    # kept_buildings = []
+    # for poly, height, conf, shadow in final_buildings:
+    #     poly_4326 = gpd.GeoSeries([poly], crs=raster_crs).to_crs(epsg=4326).iloc[0]
+    #     if not poly_4326.intersects(aoi_poly_4326):
+    #         continue
+    #     kept_buildings.append((poly, height, conf, shadow))
+
+    # export_glb(
+    #     [flat_roof(poly, height) for poly, height, _, _ in kept_buildings],
+    #     out_glb_abs
+    # )
 
     kept_buildings = []
     for poly, height, conf, shadow in final_buildings:
-        poly_4326 = gpd.GeoSeries([poly], crs=raster_crs).to_crs(epsg=4326).iloc[0]
-        if not poly_4326.intersects(aoi_poly_4326):
+        if poly is None or poly.is_empty:
             continue
-        kept_buildings.append((poly, height, conf, shadow))
+        clipped = poly.intersection(aoi_poly_raster)
+        if clipped.is_empty:
+            continue
+        if clipped.geom_type == "MultiPolygon":
+            clipped = max(clipped.geoms, key=lambda g: g.area)
+        kept_buildings.append((clipped, height, conf, shadow))
 
-    export_glb(
-        [flat_roof(poly, height) for poly, height, _, _ in kept_buildings],
-        out_glb_abs
-    )
+    export_glb([flat_roof(p, h) for p, h, _, _ in kept_buildings], out_glb_abs)
 
     logging.warning(
         f"[RECALL] YOLO={RECALL['yolo']} | SAM_OK={RECALL['sam_ok']} | SAM_DROP={RECALL['sam_drop']} | LOSS={(RECALL['sam_drop']/max(1,RECALL['yolo'])):.2%}"
