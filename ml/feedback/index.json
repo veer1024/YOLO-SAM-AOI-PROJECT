@@ -27537,5 +27537,147 @@
       89.54007625579834,
       28.87641902415733
     ]
+  },
+  {
+    "id": "5dc0173f-537c-4642-8734-5480e5431258",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-26T16:14:52.671533+00:00",
+    "image": "ml/feedback/wrong_geometry/images/5dc0173f-537c-4642-8734-5480e5431258.png",
+    "mask": "ml/feedback/wrong_geometry/masks/5dc0173f-537c-4642-8734-5480e5431258.png",
+    "bbox_xyxy": [
+      605,
+      330,
+      772,
+      416
+    ],
+    "mask_coverage": 0.016450881958007812,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.53571498394012,
+      28.87459640754548,
+      89.53997969627382,
+      28.876423721581514
+    ]
+  },
+  {
+    "id": "d19ec7ea-8ae0-4b43-b39c-e9d303b5cd74",
+    "type": "not_a_building",
+    "timestamp": "2026-01-26T16:48:29.296898+00:00",
+    "image": "ml/feedback/not_a_building/images/d19ec7ea-8ae0-4b43-b39c-e9d303b5cd74.png",
+    "mask": "ml/feedback/not_a_building/masks/d19ec7ea-8ae0-4b43-b39c-e9d303b5cd74.png",
+    "bbox_xyxy": [
+      741,
+      5,
+      878,
+      26
+    ],
+    "mask_coverage": 0.0029802322387695312,
+    "mask_touches_border": true,
+    "aoi_bounds": [
+      89.53572034835817,
+      28.873713272533166,
+      89.54004406929016,
+      28.87641432673294
+    ]
+  },
+  {
+    "id": "bce4d5b9-f48a-4569-9cb2-0c7a7b0f07ff",
+    "type": "not_a_building",
+    "timestamp": "2026-01-26T16:48:35.457885+00:00",
+    "image": "ml/feedback/not_a_building/images/bce4d5b9-f48a-4569-9cb2-0c7a7b0f07ff.png",
+    "mask": "ml/feedback/not_a_building/masks/bce4d5b9-f48a-4569-9cb2-0c7a7b0f07ff.png",
+    "bbox_xyxy": [
+      259,
+      5,
+      532,
+      28
+    ],
+    "mask_coverage": 0.005093574523925781,
+    "mask_touches_border": true,
+    "aoi_bounds": [
+      89.53572034835817,
+      28.873713272533166,
+      89.54004406929016,
+      28.87641432673294
+    ]
+  },
+  {
+    "id": "cc54187a-3a73-4a4e-9bc8-3df7dd4471b2",
+    "type": "wrong_geometry",
+    "timestamp": "2026-01-26T16:56:12.414194+00:00",
+    "image": "ml/feedback/wrong_geometry/images/cc54187a-3a73-4a4e-9bc8-3df7dd4471b2.png",
+    "mask": "ml/feedback/wrong_geometry/masks/cc54187a-3a73-4a4e-9bc8-3df7dd4471b2.png",
+    "bbox_xyxy": [
+      392,
+      97,
+      649,
+      293
+    ],
+    "mask_coverage": 0.05199623107910156,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.5399582386017,
+      28.873656901958377,
+      89.54512953758241,
+      28.876494182918805
+    ]
+  },
+  {
+    "id": "1b9b5d93-f4a7-45b8-a23d-76bb413a7cf9",
+    "type": "not_a_building",
+    "timestamp": "2026-01-26T16:56:30.923446+00:00",
+    "image": "ml/feedback/not_a_building/images/1b9b5d93-f4a7-45b8-a23d-76bb413a7cf9.png",
+    "mask": "ml/feedback/not_a_building/masks/1b9b5d93-f4a7-45b8-a23d-76bb413a7cf9.png",
+    "bbox_xyxy": [
+      985,
+      23,
+      1018,
+      50
+    ],
+    "mask_coverage": 0.0015249252319335938,
+    "mask_touches_border": true,
+    "aoi_bounds": [
+      89.5399582386017,
+      28.873656901958377,
+      89.54512953758241,
+      28.876494182918805
+    ]
+  },
+  {
+    "id": "da485a83-99cb-49b5-b3f6-16342412831f",
+    "type": "not_a_building",
+    "timestamp": "2026-01-26T16:56:40.221693+00:00",
+    "image": "ml/feedback/not_a_building/images/da485a83-99cb-49b5-b3f6-16342412831f.png",
+    "mask": "ml/feedback/not_a_building/masks/da485a83-99cb-49b5-b3f6-16342412831f.png",
+    "bbox_xyxy": [
+      455,
+      873,
+      482,
+      940
+    ],
+    "mask_coverage": 0.0023937225341796875,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.5399582386017,
+      28.873656901958377,
+      89.54512953758241,
+      28.876494182918805
+    ]
+  },
+  {
+    "id": "ffec0a58-7c6e-4203-9568-4a3797cbaa1d",
+    "type": "missing_building",
+    "timestamp": "2026-01-26T16:58:43.299399+00:00",
+    "image": "ml/feedback/missing_building/images/ffec0a58-7c6e-4203-9568-4a3797cbaa1d.png",
+    "mask": "ml/feedback/missing_building/masks/ffec0a58-7c6e-4203-9568-4a3797cbaa1d.png",
+    "bbox_xyxy": [
+      261,
+      261,
+      762,
+      762
+    ],
+    "mask_coverage": 0.23728656768798828,
+    "mask_touches_border": false,
+    "aoi_bounds": null
   }
 ]

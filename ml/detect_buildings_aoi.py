@@ -132,7 +132,7 @@ OUT_DIR = "ml/output"
 OUT_GEOJSON = f"{OUT_DIR}/buildings.geojson"
 OUT_GLB = f"{OUT_DIR}/aoi_buildings.glb"
 
-DEFAULT_HEIGHT = 12.0
+DEFAULT_HEIGHT = 6.0
 MIN_AREA_PX = 600        # slightly higher for airports
 #MAX_AOI_RATIO = 0.08     # reject giant flat regions
 
@@ -604,22 +604,40 @@ def directional_halfplane_filter(shadow_mask, building_mask, dx, dy):
     out = np.zeros_like(shadow_mask, dtype=np.uint8)
     out[yy[proj > 0], xx[proj > 0]] = 1
     return out
+# def morph_cleanup(shadow_mask, open_iter=1, close_iter=1, min_area=200):
+#     k = np.ones((3,3), np.uint8)
+#     m = shadow_mask.astype(np.uint8)
+
+#     # remove thin spikes/noise
+#     m = cv2.morphologyEx(m, cv2.MORPH_OPEN, k, iterations=open_iter)
+#     # fill small gaps
+#     m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k, iterations=close_iter)
+
+#     # remove tiny blobs
+#     num, labels, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
+#     out = np.zeros_like(m)
+#     for i in range(1, num):
+#         if stats[i, cv2.CC_STAT_AREA] >= min_area:
+#             out[labels == i] = 1
+#     return out
+
 def morph_cleanup(shadow_mask, open_iter=1, close_iter=1, min_area=200):
     k = np.ones((3,3), np.uint8)
     m = shadow_mask.astype(np.uint8)
 
-    # remove thin spikes/noise
-    m = cv2.morphologyEx(m, cv2.MORPH_OPEN, k, iterations=open_iter)
-    # fill small gaps
-    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k, iterations=close_iter)
+    if open_iter and open_iter > 0:
+        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, k, iterations=int(open_iter))
+    if close_iter and close_iter > 0:
+        m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k, iterations=int(close_iter))
 
-    # remove tiny blobs
     num, labels, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
     out = np.zeros_like(m)
     for i in range(1, num):
         if stats[i, cv2.CC_STAT_AREA] >= min_area:
             out[labels == i] = 1
     return out
+
+
 import cv2
 import numpy as np
 
@@ -652,6 +670,74 @@ def keep_shadow_connected_to_building(shadow_mask, building_mask, seed_dilate=3)
 
     return keep
 
+def robust_shadow_length_from_mask(shadow_mask, seed_mask, dx, dy, min_bins=10):
+    """
+    Robust shadow length in pixels:
+    For each width-wise bin, compute:
+        length_bin = max_t(shadow in bin) - max_t(seed in bin)
+    Then take a trimmed mean over bins.
+    """
+
+    sy, sx = np.where(seed_mask > 0)
+    yy, xx = np.where(shadow_mask > 0)
+    if len(sx) < 20 or len(xx) < 50:
+        return None
+
+    # Use any consistent origin (cancels out because we subtract)
+    cx0 = float(np.mean(sx))
+    cy0 = float(np.mean(sy))
+
+    # unit dir + perpendicular
+    dnx, dny = float(dx), float(dy)
+    pnx, pny = -dny, dnx
+
+    # seed projections
+    t_seed = (sx - cx0) * dnx + (sy - cy0) * dny
+    p_seed = (sx - cx0) * pnx + (sy - cy0) * pny
+
+    # shadow projections
+    t_sh = (xx - cx0) * dnx + (yy - cy0) * dny
+    p_sh = (xx - cx0) * pnx + (yy - cy0) * pny
+
+    # bin range based on seed width (stable)
+    pmin, pmax = np.percentile(p_seed, 2), np.percentile(p_seed, 98)
+    if not np.isfinite(pmin) or not np.isfinite(pmax) or pmax <= pmin:
+        return None
+
+    nbins = 40
+    bins = np.linspace(pmin, pmax, nbins + 1)
+
+    idx_seed = np.digitize(p_seed, bins) - 1
+    idx_sh   = np.digitize(p_sh,   bins) - 1
+
+    lengths = []
+    for b in range(nbins):
+        ssel = (idx_seed == b)
+        hsel = (idx_sh == b)
+
+        if np.count_nonzero(ssel) < 5 or np.count_nonzero(hsel) < 10:
+            continue
+
+        t0 = float(np.max(t_seed[ssel]))   # start = shadow-facing edge
+        t1 = float(np.max(t_sh[hsel]))     # end   = farthest shadow
+        L = t1 - t0
+
+        if L > 0:
+            lengths.append(L)
+
+    if len(lengths) < min_bins:
+        return None
+
+    lengths = np.array(lengths, dtype=np.float32)
+
+    # trim outliers (kills tiny spike that goes long)
+    lo = np.percentile(lengths, 20)
+    hi = np.percentile(lengths, 80)
+    lengths = lengths[(lengths >= lo) & (lengths <= hi)]
+    if len(lengths) == 0:
+        return None
+
+    return float(np.mean(lengths))
 
 
 
@@ -768,6 +854,44 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
                 shadow_mask[y, x] = 1
                 local_len = step
 
+
+            # min_gray = int(gray_s[y0, x0])
+            # bright_count = 0
+
+            # # tuned defaults (good starting point)
+            # DELTA = 8            # was too small; try 6–12
+            # BRIGHT_LIMIT = 6     # allow more bumps before stopping
+            # HARD_THR_PAD = 5     # allow a little above thr before stopping
+
+            # for step in range(1, max_steps):
+            #     x = int(round(x0 + dx * step))
+            #     y = int(round(y0 + dy * step))
+            #     if x < 0 or y < 0 or x >= w or y >= h:
+            #         break
+
+            #     if building_mask[y, x] == 1:
+            #         continue
+
+            #     g = int(gray_s[y, x])
+
+            #     # 1) absolute stop (but allow a small pad)
+            #     # if g > (thr + HARD_THR_PAD):
+            #     #     break
+
+            #     # 2) soft monotonic check (tolerant)
+            #     if g > (min_gray + DELTA):
+            #         bright_count += 1
+            #         if bright_count >= BRIGHT_LIMIT:
+            #             break
+            #     else:
+            #         bright_count = 0
+            #         if g < min_gray:
+            #             min_gray = g
+
+            #     shadow_mask[y, x] = 1
+            #     local_len = step
+
+
             if local_len > 0:
                 shadow_lengths.append(local_len)
 
@@ -824,6 +948,35 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
         # Thin edge band only
         seed = cv2.dilate(seed, np.ones((3,3), np.uint8), 1)
 
+        # ---- NEW: Perpendicular band constraint (prevents wedge/slanted sides) ----
+        # unit perpendicular to shadow direction
+        px, py = -dy, dx
+
+        ys_s, xs_s = np.where(seed > 0)
+        if len(xs_s) == 0:
+            return None
+
+        # reference center from building edge centroid (you already have xs,ys from edges)
+        cx0 = float(xs.mean())
+        cy0 = float(ys.mean())
+
+        # perpendicular coordinates of seed pixels
+        p_seed = (xs_s - cx0) * px + (ys_s - cy0) * py
+        pmin = float(np.min(p_seed))
+        pmax = float(np.max(p_seed))
+
+        # allow a small margin (in pixels) so we don't chop valid shadow
+        PERP_MARGIN_PX = max(4, int(0.02 * max(h, w)))  # or based on building bbox width
+        PERP_MARGIN_PX = min(PERP_MARGIN_PX, 20)
+        pmin -= PERP_MARGIN_PX
+        pmax += PERP_MARGIN_PX
+
+        # build perp-band mask for whole image
+        YY, XX = np.indices((h, w))
+        p_all = (XX - cx0) * px + (YY - cy0) * py
+        perp_band = ((p_all >= pmin) & (p_all <= pmax)).astype(np.uint8)
+
+
         # Sweep seed forward along shadow direction
         corridor = np.zeros((h, w), np.uint8)
 
@@ -839,11 +992,32 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
             )
             corridor |= shifted
 
-        # Corridor must not include building
+        # # Corridor must not include building
+        # corridor[building_mask == 1] = 0
+
+        # # Apply width constraint
+        # shadow_mask &= corridor
+
         corridor[building_mask == 1] = 0
 
-        # Apply width constraint
+        # apply perp band to kill wedge sides
+        corridor &= perp_band
+
         shadow_mask &= corridor
+
+        shadow_mask = morph_cleanup(shadow_mask, open_iter=0, close_iter=1, min_area=120)
+        shadow_mask[building_mask == 1] = 0
+        if int(shadow_mask.sum()) < 10:
+            return None
+
+
+        #t_len_px = robust_shadow_length_from_mask(shadow_mask, building_mask, dx, dy)
+        t_len_px = robust_shadow_length_from_mask(shadow_mask, seed, dx, dy)
+        if t_len_px is None:
+            return None
+
+        shadow_len_m = t_len_px * pixel_size_m
+        height = shadow_len_m * math.tan(math.radians(sun_elev))
 
         # ================================================================
 
@@ -866,6 +1040,7 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
             coords.append((wx, wy))
 
         shadow_poly = Polygon(coords)
+        shadow_poly = shadow_poly.simplify(pixel_size_m * 0.8, preserve_topology=True)
         if not shadow_poly.is_valid:
             shadow_poly = shadow_poly.buffer(0)
 
@@ -880,8 +1055,8 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
             shadow_poly = max(shadow_poly.geoms, key=lambda g: g.area)
 
         # 9) height math
-        shadow_len_m = max_shadow_px * pixel_size_m
-        height = shadow_len_m * math.tan(math.radians(sun_elev))
+        #shadow_len_m = max_shadow_px * pixel_size_m
+        #height = shadow_len_m * math.tan(math.radians(sun_elev))
         if not np.isfinite(height):
             return None
 
