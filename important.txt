@@ -1,0 +1,12 @@
+CURRENT FLAW:
+
+ Building footprint detection is not 100 % accurate, there are some flaw in code logic leading in 85% footprint detection accuracy.
+
+ Noises: in each run usually 5-6% noises are detected in output ( model retraining required)
+
+
+ PROS:
+
+ 1. Height detection is more then 90% accurate. ( more R&D and data optimization required)
+ 2. GLB/GEOGSON export import make solution portable.
+ 3. no gpu required to run this.

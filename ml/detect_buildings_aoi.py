@@ -159,7 +159,7 @@ sam.to(device=device, dtype=torch.float32)
 sam.eval()
 
 #decoder_ckpt = "ml/sam_training/checkpoints/sam_decoder_finetuned.pth.epoch12.pth"
-decoder_ckpt="SAM_TRAINED_MODEL/sam_decoder_finetuned.pth.epoch15.pth"
+decoder_ckpt="SAM_TRAINED_MODEL/sam_decoder_finetuned.pth.epoch23.pth"
 sam.mask_decoder.load_state_dict(torch.load(decoder_ckpt, map_location=device))
 logging.info("Fine-tuned SAM decoder loaded")
 
@@ -557,6 +557,19 @@ def load_osm_cache(bounds):
 
     return None
 
+SHADOW_RETRY_LEVELS = [
+    # try 1: current strict-ish
+    dict(seed_dilate=2, open_iter=1, close_iter=1, min_area=150,
+         perp_margin_min=6,  perp_margin_max=20, min_shadow_rays=25),
+
+    # try 2: relax a bit (more area + wider band)
+    dict(seed_dilate=3, open_iter=0, close_iter=1, min_area=90,
+         perp_margin_min=10, perp_margin_max=28, min_shadow_rays=18),
+
+    # try 3: most relaxed (still safe)
+    dict(seed_dilate=4, open_iter=0, close_iter=1, min_area=60,
+         perp_margin_min=14, perp_margin_max=36, min_shadow_rays=12),
+]
 
 
 def osm_height_from_tags(osm_row):
@@ -739,10 +752,37 @@ def robust_shadow_length_from_mask(shadow_mask, seed_mask, dx, dy, min_bins=10):
 
     return float(np.mean(lengths))
 
+def estimate_height_with_retries(poly, img_rgb, transform, raster_crs, conf=None, max_tries=3):
+    """
+    Try shadow height estimation multiple times with progressively relaxed cfg.
+    Returns shadow_info or None.
+    """
+    for i in range(min(max_tries, len(SHADOW_RETRY_LEVELS))):
+        cfg = SHADOW_RETRY_LEVELS[i]
+        logging.info(f"[SHADOW] try={i+1} cfg={cfg}")
+        out = estimate_height_from_shadow(poly, img_rgb, transform, raster_crs, cfg=cfg)
+        if out is not None and np.isfinite(out.get("height", None)):
+            logging.info(f"[SHADOW] success try={i+1} height={out['height']:.2f} shadow_len={out['shadow_length_m']:.2f}")
+            return out
+    logging.info("[SHADOW] all retries failed")
+    return None
 
 
-def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
+def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs, cfg=None):
     logging.info("Shadow height estimation invoked")
+
+    # ---------------- CFG OVERRIDES ----------------
+    cfg = cfg or {}
+
+    seed_dilate     = int(cfg.get("seed_dilate", 2))
+    open_iter       = int(cfg.get("open_iter", 1))
+    close_iter      = int(cfg.get("close_iter", 1))
+    min_area        = int(cfg.get("min_area", 150))
+    min_shadow_rays = int(cfg.get("min_shadow_rays", 25))
+
+    perp_margin_min = int(cfg.get("perp_margin_min", 6))
+    perp_margin_max = int(cfg.get("perp_margin_max", 20))
+    # ----------------------------------------------
 
     # -------------------------------------------------------------------------------
 
@@ -896,7 +936,10 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
                 shadow_lengths.append(local_len)
 
         
-        if len(shadow_lengths) < 25:
+        # if len(shadow_lengths) < 25:
+        #     return None
+
+        if len(shadow_lengths) < min_shadow_rays:
             return None
 
         max_shadow_px = int(np.percentile(shadow_lengths, 80))
@@ -908,7 +951,8 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
 
         # ===================== NEW: CLEANUP TO REMOVE EXTRA NOISE =====================
         # A) Keep only shadow blobs connected to a band just outside building
-        shadow_mask = keep_shadow_connected_to_building(shadow_mask, building_mask, seed_dilate=2)
+        #shadow_mask = keep_shadow_connected_to_building(shadow_mask, building_mask, seed_dilate=2)
+        shadow_mask = keep_shadow_connected_to_building(shadow_mask, building_mask, seed_dilate=seed_dilate)
         if int(shadow_mask.sum()) < 10:
             return None
 
@@ -918,7 +962,8 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
             return None
 
         # C) Morphological cleanup (spikes / little islands)
-        shadow_mask = morph_cleanup(shadow_mask, open_iter=1, close_iter=1, min_area=150)
+        #shadow_mask = morph_cleanup(shadow_mask, open_iter=1, close_iter=1, min_area=150)
+        shadow_mask = morph_cleanup(shadow_mask, open_iter=open_iter, close_iter=close_iter, min_area=min_area)
         shadow_mask[building_mask == 1] = 0
         if int(shadow_mask.sum()) < 10:
             return None
@@ -966,8 +1011,10 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs):
         pmax = float(np.max(p_seed))
 
         # allow a small margin (in pixels) so we don't chop valid shadow
-        PERP_MARGIN_PX = max(4, int(0.02 * max(h, w)))  # or based on building bbox width
-        PERP_MARGIN_PX = min(PERP_MARGIN_PX, 20)
+        #PERP_MARGIN_PX = max(4, int(0.02 * max(h, w)))  # or based on building bbox width
+        #PERP_MARGIN_PX = min(PERP_MARGIN_PX, 20)
+        PERP_MARGIN_PX = max(perp_margin_min, int(0.02 * max(h, w)))
+        PERP_MARGIN_PX = min(PERP_MARGIN_PX, perp_margin_max)
         pmin -= PERP_MARGIN_PX
         pmax += PERP_MARGIN_PX
 
@@ -2753,17 +2800,23 @@ def detect_buildings(bounds):
         height = None
 
         # 1️⃣ OSM height if available
-        height = find_matching_osm_height(poly, osm, raster_crs)
+        #height = find_matching_osm_height(poly, osm, raster_crs)
 
         # 2️⃣ Shadow height if SAM confident
         shadow_info = None
 
         ## disabling height calculation for now so that we can focus on footprinting first, but after footprint height is next priority
         
+        # if height is None and conf >= 0.75:
+        #     shadow_info = estimate_height_from_shadow(poly, img_rgb, transform, raster_crs)
+        #     if shadow_info:
+        #         height = shadow_info["height"]
+
         if height is None and conf >= 0.75:
-            shadow_info = estimate_height_from_shadow(poly, img_rgb, transform, raster_crs)
+            shadow_info = estimate_height_with_retries(poly, img_rgb, transform, raster_crs, conf=conf, max_tries=3)
             if shadow_info:
                 height = shadow_info["height"]
+
 
 
         # 3️⃣ Fallback

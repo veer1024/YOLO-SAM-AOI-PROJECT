@@ -13,7 +13,7 @@
 
 # Loss balance
 POS_WEIGHT = 1.2
-NEG_WEIGHT = 0.6          # strong suppression of false positives
+NEG_WEIGHT = 0.7          # strong suppression of false positives
 
 
 
@@ -21,8 +21,8 @@ CHECKPOINT = "ml/checkpoints/sam_vit_b.pth"
 DATASET_JSON = "ml/feedback/feedback_dataset_clean.json"
 
 BATCH_SIZE = 8
-LR = 5e-5
-EPOCHS = 16
+LR = 4e-5
+EPOCHS = 23
 
 DEVICE = "cuda"
 SAVE_PATH = "ml/sam_training/checkpoints/sam_decoder_finetuned.pth"
