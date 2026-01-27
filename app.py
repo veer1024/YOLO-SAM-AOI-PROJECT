@@ -48,8 +48,14 @@ logging.getLogger("rio_tiler").setLevel(logging.WARNING)
 # ----------------------------
 # APP + CONFIG
 # ----------------------------
-app = Flask(__name__)
 
+from werkzeug.utils import secure_filename
+
+IMPORT_DIR = "ml/imports"
+os.makedirs(IMPORT_DIR, exist_ok=True)
+
+#app = Flask(__name__)
+app = Flask(__name__, static_folder="static")
 FEEDBACK_TIF = "data/data/processed/phr1a_20210227_rgb_3857_cog.tif"
 FEEDBACK_DIR = "ml/feedback"
 os.makedirs(FEEDBACK_DIR, exist_ok=True)
@@ -139,6 +145,80 @@ def _save_debug_images(base_dir, feedback_id, image_rgb, mask_u8, bbox=None):
     cv2.imwrite(bbox_img, cv2.cvtColor(bb, cv2.COLOR_RGB2BGR))
 
     return mask_dbg, overlay, bbox_img
+
+# ---------------------------
+# EXPORT TIFF
+# ---------------------------
+
+@app.route("/export_aoi_tif", methods=["POST"])
+def export_aoi_tif():
+    data = request.get_json(force=True, silent=True) or {}
+    bounds = data.get("bounds")
+    if not bounds or len(bounds) != 4:
+        return jsonify({"error": "bounds must be [west,south,east,north]"}), 400
+
+    out_path = f"ml/tmp/export_aoi_{uuid.uuid4().hex}.tif"
+    try:
+        # reuse your existing function
+        from ml.detect_buildings_aoi import extract_aoi
+        extract_aoi(bounds, out_path)
+        return send_file(out_path, as_attachment=True, download_name="aoi.tif")
+    except Exception as e:
+        logging.exception("export_aoi_tif failed")
+        return jsonify({"error": str(e)}), 500
+
+# ----------------------------
+# IMPORT RUN
+# ----------------------------
+
+@app.route("/import_upload", methods=["POST"])
+def import_upload():
+    if "files" not in request.files:
+        return jsonify({"error": "No files provided (field name must be 'files')"}), 400
+
+    files = request.files.getlist("files")
+    if not files:
+        return jsonify({"error": "Empty upload"}), 400
+
+    run_id = uuid.uuid4().hex
+    out_dir = os.path.join(IMPORT_DIR, run_id)
+    os.makedirs(out_dir, exist_ok=True)
+
+    geojson_path = None
+    glb_path = None
+
+    allowed = {".geojson", ".glb"}
+
+    for f in files:
+        if not f or not f.filename:
+            continue
+        name = secure_filename(f.filename)
+        ext = os.path.splitext(name.lower())[1]
+
+        if ext not in allowed:
+            continue
+
+        save_path = os.path.join(out_dir, name)
+        f.save(save_path)
+
+        # return path relative to ml/ for your /ml/<path> server
+        rel = os.path.relpath(save_path, "ml")
+
+        if ext == ".geojson":
+            geojson_path = rel
+        elif ext == ".glb":
+            glb_path = rel
+
+    if not geojson_path and not glb_path:
+        return jsonify({"error": "No valid .geojson or .glb uploaded"}), 400
+
+    return jsonify({
+        "status": "ok",
+        "geojson": geojson_path,
+        "glb": glb_path
+    }), 200
+
+
 
 # ----------------------------
 # FEEDBACK ENDPOINT
