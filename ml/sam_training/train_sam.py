@@ -86,7 +86,7 @@ def build_sampler(dataset: FeedbackDataset):
         if item["type"] == "wrong_geometry":
             weights.append(1.5)
         elif item["type"] == "missing_building":
-            weights.append(2.0)
+            weights.append(1.3)
         else:
             weights.append(1.1)
     return WeightedRandomSampler(weights=weights, num_samples=len(weights), replacement=True)

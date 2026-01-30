@@ -8,6 +8,7 @@ import cv2
 from pathlib import Path
 import time
 
+from datetime import datetime
 
 # -----------------------------
 # Tunables / guards
@@ -47,28 +48,33 @@ MIN_THICK_PX = 6   # kills roads & thin shadows
 MODEL_PATH = "current_yolo/best.pt"
 model = YOLO(MODEL_PATH)
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-logger.propagate = False
+logger = logging.getLogger("ml.yolo_detector")
 
-formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+# Root-ish format that matches detect_buildings_aoi.py style
+_DEFAULT_FMT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 
-file_handler = logging.FileHandler("yolo_detector.log", mode="a")
-file_handler.setFormatter(formatter)
-file_handler.setLevel(logging.INFO)
+def _get_log(log: logging.Logger | None = None) -> logging.Logger:
+    """Return caller-provided logger or a module logger with a safe default handler."""
+    if log is not None:
+        return log
+    # If app configured logging already, don't add handlers here.
+    if not logger.handlers and not logging.getLogger().handlers:
+        h = logging.StreamHandler(sys.stdout)
+        h.setFormatter(logging.Formatter(_DEFAULT_FMT))
+        logger.addHandler(h)
+        logger.setLevel(logging.INFO)
+    return logger
 
-stdout_handler = logging.StreamHandler(sys.stdout)
-stdout_handler.setFormatter(formatter)
-stdout_handler.setLevel(logging.INFO)
+# Where to dump YOLO debug artifacts:
+#   ml/output/yolo_debug/<run_id>/...
+YOLO_DEBUG_BASE = Path("ml/output/yolo_debug")
+YOLO_DEBUG_BASE.mkdir(parents=True, exist_ok=True)
 
-if not logger.handlers:
-    logger.addHandler(file_handler)
-    logger.addHandler(stdout_handler)
-
-# Where to dump debug images (optional)
-DEBUG_DIR = Path("ml/tmp/yolo_debug")
-DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-
+def _get_debug_dir(run_id: str | None) -> Path:
+    rid = run_id or "no_run"
+    d = YOLO_DEBUG_BASE / rid
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 def _round_to(x, base=32):
     x = int(x)
@@ -84,8 +90,28 @@ def _box_wh(b):
     return max(0, int(x2) - int(x1)), max(0, int(y2) - int(y1))
 
 
+import json
+
+def _save_json(obj, path: Path):
+    path.write_text(json.dumps(obj, indent=2), encoding="utf-8")
 
 
+def _save_tile_debug(img_rgb, x, y, tile_size, boxes_local, out_path, title="tile"):
+    crop = img_rgb[y:y+tile_size, x:x+tile_size].copy()
+    if crop.size == 0:
+        return
+    # draw local boxes on the tile crop
+    h, w = crop.shape[:2]
+    for i, (x1, y1, x2, y2, conf) in enumerate(boxes_local):
+        x1 = int(np.clip(x1, 0, w - 1)); y1 = int(np.clip(y1, 0, h - 1))
+        x2 = int(np.clip(x2, 0, w - 1)); y2 = int(np.clip(y2, 0, h - 1))
+        cv2.rectangle(crop, (x1, y1), (x2, y2), (255, 255, 0), 2)  # yellow
+        cv2.putText(crop, f"{i}:{conf:.2f}", (x1, max(12, y1-5)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 0), 1, cv2.LINE_AA)
+
+    cv2.putText(crop, title, (8, 18),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.imwrite(str(out_path), cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
 
 def _overlap_1d(a1, a2, b1, b2):
     inter = max(0.0, min(a2, b2) - max(a1, b1))
@@ -388,13 +414,15 @@ def _drop_mega(boxes, W, H):
     return normal if normal else boxes  # <-- IMPORTANT fallback
 
 
+
+
 # def _drop_mega_soft(boxes, W, H):
 #     out = []
 #     for b in boxes:
 #         x1,y1,x2,y2,s = b
 #         if _is_mega_box_xyxy(x1,y1,x2,y2,W,H):
-#             if s < 0.50:   # only drop weak mega boxes
-#                 continue
+#             # always drop mega boxes (they are bad prompts), unless absolutely nothing else exists
+#             continue
 #         out.append(b)
 #     return out if out else boxes
 
@@ -403,69 +431,79 @@ def _drop_mega_soft(boxes, W, H):
     for b in boxes:
         x1,y1,x2,y2,s = b
         if _is_mega_box_xyxy(x1,y1,x2,y2,W,H):
-            # always drop mega boxes (they are bad prompts), unless absolutely nothing else exists
-            continue
+            if s < 0.55:   # drop only weak mega boxes
+                continue
         out.append(b)
     return out if out else boxes
 
 
-# def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens"):
-#     H, W = img_rgb.shape[:2]
+def _draw_boxes_with_votes(img_rgb, merged_boxes, cluster_debug, out_path, title="YOLO ENSEMBLE FINAL"):
+    """
+    Draw merged boxes and annotate vote count + best score.
+    cluster_debug: list of clusters from merge_boxes_ensemble(return_debug=True)
+    """
+    if img_rgb is None or img_rgb.size == 0:
+        return
 
-#     runs = []
-#     r = detect_building_boxes_microtiles(img_rgb, tile_size=None, overlap=None,
-#                                          conf=0.14, debug=debug, debug_tag=f"{debug_tag}_auto")
-#     #runs.append(_drop_mega(r, W, H))
-#     runs.append(_drop_mega_soft(r, W, H))
+    dbg = img_rgb.copy()
+    h, w = dbg.shape[:2]
 
-#     r = detect_building_boxes_microtiles(img_rgb, tile_size=256, overlap=0.60,
-#                                          conf=0.14, debug=debug, debug_tag=f"{debug_tag}_256")
-#     #runs.append(_drop_mega(r, W, H))
-#     runs.append(_drop_mega_soft(r, W, H))
+    # Build lookup from merged box (xyxy rounded) -> (votes, best_score)
+    lut = {}
+    for c in cluster_debug:
+        if not c.get("kept", False):
+            continue
+        x1, y1, x2, y2 = c["rep_box_rounded"]
+        lut[(x1, y1, x2, y2)] = (c["votes"], float(c["best_score"]))
 
-#     r = detect_building_boxes_microtiles(img_rgb, tile_size=416, overlap=0.55,
-#                                          conf=0.16, debug=debug, debug_tag=f"{debug_tag}_416")
-#     #runs.append(_drop_mega(r, W, H))
-#     runs.append(_drop_mega_soft(r, W, H))
+    for i, (x1, y1, x2, y2, conf) in enumerate(merged_boxes):
+        x1 = int(np.clip(x1, 0, w - 1))
+        y1 = int(np.clip(y1, 0, h - 1))
+        x2 = int(np.clip(x2, 0, w - 1))
+        y2 = int(np.clip(y2, 0, h - 1))
+        cv2.rectangle(dbg, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-#     r = detect_building_boxes(img_rgb, conf=0.18, imgsz=640, debug=debug, debug_tag=f"{debug_tag}_full")
-#     #runs.append(_drop_mega(r, W, H))
-#     runs.append(_drop_mega_soft(r, W, H))
+        votes, best_s = lut.get((x1, y1, x2, y2), (None, None))
+        if votes is None:
+            label = f"{i}:{conf:.2f}"
+        else:
+            label = f"{i}:v{votes} best{best_s:.2f}"
 
-#     # final_boxes = merge_boxes_ensemble(
-#     #     runs, iou_thr=0.45, min_votes=2, conf_strong=0.35, wbf=True
-#     # )
-#     final_boxes = merge_boxes_ensemble(
-#         runs, iou_thr=0.50, min_votes=2, conf_strong=0.22, wbf=True,image_wh=(W, H)
-#     )
+        cv2.putText(
+            dbg, label, (x1, max(12, y1 - 5)),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1, cv2.LINE_AA
+        )
 
-#     if len(final_boxes) < 6:  # tune this threshold for your AOI size
-#         r = detect_building_boxes_microtiles(img_rgb, tile_size=224, overlap=0.80, conf=0.10,
-#                                              debug=debug, debug_tag=f"{debug_tag}_recall224")
-#         r = _drop_mega_soft(r, W, H)
-#         # merge AGAIN but allow singleton rescue to work
-#         final_boxes = merge_boxes_ensemble(
-#             runs + [r], iou_thr=0.50, min_votes=2, conf_strong=0.22, wbf=True, image_wh=(W, H)
-#         )
-#     return final_boxes
+    cv2.putText(
+        dbg, title, (8, 18),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA
+    )
+    cv2.imwrite(str(out_path), cv2.cvtColor(dbg, cv2.COLOR_RGB2BGR))
 
 
-def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens"):
+
+def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens", log=None, run_id=None):
     """
     High-recall YOLO ensemble for satellite roofs.
     Designed for ~0.5 m/px imagery and container-like buildings.
     """
+    log = _get_log(log)
+    # if debug and run_id is None:
+    #     run_id = f"{debug_tag}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
     #LARGE_AOI_AREA_PX = 1200 * 1200
-    LARGE_AOI_AREA_PX = 450 * 450
+    LARGE_AOI_AREA_PX = 250 * 250
 
     H, W = img_rgb.shape[:2]
+
+    if run_id is None:
+        run_id = f"{debug_tag}_{int(time.time() * 1000)}"
     img_area = H * W
-    logging.info(f"[YOLO DBG] img_hw=({H},{W}) area={H*W} LARGE_AOI_AREA_PX={LARGE_AOI_AREA_PX}")
+    log.info(f"[YOLO DBG] img_hw=({H},{W}) area={H*W} LARGE_AOI_AREA_PX={LARGE_AOI_AREA_PX}")
 
     runs = []
 
     def _dbg_count(tag, boxes):
-        logging.info(f"[YOLO DBG] {tag}: {0 if boxes is None else len(boxes)} boxes")
+        log.info(f"[YOLO DBG] {tag}: {0 if boxes is None else len(boxes)} boxes")
 
     # =========================================================
     # BASELINE RUNS (always executed)
@@ -480,6 +518,7 @@ def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens"):
         imgsz=640,
         debug=debug,
         debug_tag=f"{debug_tag}_auto",
+        run_id=run_id,
     )
     _dbg_count("auto_raw", r)
     r = _drop_mega_soft(r, W, H)
@@ -495,6 +534,7 @@ def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens"):
         imgsz=640,
         debug=debug,
         debug_tag=f"{debug_tag}_256",
+        run_id=run_id,
     )
     _dbg_count("256_raw", r)
     r = _drop_mega_soft(r, W, H)
@@ -510,6 +550,7 @@ def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens"):
         imgsz=640,
         debug=debug,
         debug_tag=f"{debug_tag}_416",
+        run_id=run_id,
     )
     _dbg_count("416_raw", r)
     r = _drop_mega_soft(r, W, H)
@@ -545,6 +586,7 @@ def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens"):
             imgsz=640,
             debug=debug,
             debug_tag=f"{debug_tag}_224_hiov",
+            run_id=run_id,
         )
         _dbg_count("224_raw", r)
         r = _drop_mega_soft(r, W, H)
@@ -560,6 +602,7 @@ def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens"):
             imgsz=640,
             debug=debug,
             debug_tag=f"{debug_tag}_320_hiov",
+            run_id=run_id,
         )
         _dbg_count("320_raw", r)
         r = _drop_mega_soft(r, W, H)
@@ -575,6 +618,7 @@ def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens"):
             imgsz=768,
             debug=debug,
             debug_tag=f"{debug_tag}_256_imgsz768",
+            run_id=run_id,
         )
         _dbg_count("256_768_raw", r)
         r = _drop_mega_soft(r, W, H)
@@ -597,24 +641,55 @@ def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens"):
     # =========================================================
     # MERGE
     # =========================================================
+    clusters_debug = []
 
-    final_boxes = merge_boxes_ensemble(
-        runs,
-        iou_thr=0.45,        # slightly looser → preserves close roofs
-        min_votes=2,         # you already verified this is safe
-        conf_strong=0.20,    # gentle confidence floor
-        wbf=True,
-        image_wh=(W, H),
-    )
+    if debug:
+        final_boxes, clusters_debug = merge_boxes_ensemble(
+            runs,
+            iou_thr=0.45,
+            min_votes=2,
+            conf_strong=0.20,
+            wbf=True,
+            image_wh=(W, H),
+            return_debug=True,
+        )
+
+        # Save ensemble-final JSON with votes
+        out_json = _get_debug_dir(run_id) / f"yolo_ensemble_final_{run_id}.json"
+        _save_json({
+            "stage": "ensemble_final",
+            "run_id": run_id,
+            "image_wh": [W, H],
+            "params": {"iou_thr": 0.45, "min_votes": 2, "conf_strong": 0.20, "wbf": True},
+            "clusters": clusters_debug,
+            "merged_boxes": [{"x1":b[0],"y1":b[1],"x2":b[2],"y2":b[3],"conf":float(b[4])} for b in final_boxes],
+        }, out_json)
+
+        # Save ensemble-final PNG
+        out_png = _get_debug_dir(run_id) / f"yolo_ensemble_final_{run_id}.png"
+        _draw_boxes_with_votes(img_rgb, final_boxes, clusters_debug, out_png,
+                               title=f"YOLO ENSEMBLE FINAL ({len(final_boxes)})")
+
+        log.info(f"[YOLO ENSEMBLE] ensemble_final saved: {out_png} and {out_json}")
+    else:
+        final_boxes = merge_boxes_ensemble(
+            runs,
+            iou_thr=0.45,
+            min_votes=2,
+            conf_strong=0.20,
+            wbf=True,
+            image_wh=(W, H),
+        )
 
     _dbg_count("final_merged", final_boxes)
+
 
     # =========================================================
     # LAST-RESORT RESCUE (ONLY if recall is terrible)
     # =========================================================
 
     if len(final_boxes) < 6:
-        logging.warning("[YOLO] Low recall detected → rescue pass")
+        log.warning("[YOLO] Low recall detected → rescue pass")
 
         r = detect_building_boxes_microtiles(
             img_rgb,
@@ -624,6 +699,7 @@ def detect_building_boxes_ensemble(img_rgb, debug=False, debug_tag="ens"):
             imgsz=640,
             debug=debug,
             debug_tag=f"{debug_tag}_rescue192",
+            run_id=run_id,
         )
         _dbg_count("rescue_raw", r)
         r = _drop_mega_soft(r, W, H)
@@ -655,6 +731,7 @@ def merge_boxes_ensemble(
     wbf=True,
     max_cluster_size=2000,
     image_wh=None,
+    return_debug=False, 
 ):
     """
     Merge YOLO box outputs from multiple runs into a single set of boxes.
@@ -716,6 +793,8 @@ def merge_boxes_ensemble(
 
     # Sort by confidence (seed clusters from strongest boxes)
     items.sort(key=lambda t: t[4], reverse=True)
+
+    clusters_debug = []   # ✅ ADD THIS
 
     def _iou(a, b):
         ax1, ay1, ax2, ay2 = a
@@ -796,6 +875,7 @@ def merge_boxes_ensemble(
     # -----------------------------
     # Voting / keep rules  output
     # -----------------------------
+    clusters_debug =[]
     merged = []
     for c in clusters:
         votes = len(c["runs"])
@@ -838,6 +918,34 @@ def merge_boxes_ensemble(
                 # If no image size info, be conservative
                 keep = (best_s >= 0.55 and bw >= MIN_BOX_PX and bh >= MIN_BOX_PX)
 
+        reason = "dropped"
+        if votes >= min_votes:
+            reason = f"kept_votes>={min_votes}"
+        elif best_s >= conf_strong:
+            reason = f"kept_strong>={conf_strong}"
+        elif votes == 1:
+            reason = "kept_singleton_rescue" if keep else "drop_singleton_gates"
+
+        # rounded rep box for stable lookup on the PNG
+        rx1, ry1, rx2, ry2 = c["rep_box"]
+        rep_box_rounded = [int(round(rx1)), int(round(ry1)), int(round(rx2)), int(round(ry2))]
+
+        clusters_debug.append({
+            "votes": int(votes),
+            "runs": sorted([int(r) for r in c["runs"]]),
+            "best_score": float(best_s),
+            "rep_box": [float(rx1), float(ry1), float(rx2), float(ry2)],
+            "rep_box_rounded": rep_box_rounded,
+            "kept": bool(keep),
+            "reason": reason,
+            "members": [
+                {"x1": float(m[0]), "y1": float(m[1]), "x2": float(m[2]), "y2": float(m[3]),
+                 "conf": float(m[4]), "run_id": int(m[5])}
+                for m in c["members"]
+            ],
+        })
+
+
         if keep:
             x1, y1, x2, y2 = c["rep_box"]
 
@@ -855,16 +963,22 @@ def merge_boxes_ensemble(
                     bh = y2 - y1
                     #grow = int(np.clip(0.06 * min(bw, bh), 6, 40))  # 6% of short side
                     #grow = int(np.clip(0.06 * min(bw, bh), 4, 28))
-                    grow = int(np.clip(0.03 * min(bw, bh), 2, 18))
-                    x1 = max(0, x1 - grow)
-                    y1 = max(0, y1 - grow)
-                    x2 = min(W - 1, x2 + grow)
-                    y2 = min(H - 1, y2 + grow)
+                    #grow = int(np.clip(0.03 * min(bw, bh), 2, 18))
+                    #x1 = max(0, x1 - grow)
+                    #y1 = max(0, y1 - grow)
+                    #x2 = min(W - 1, x2 + grow)
+                    #y2 = min(H - 1, y2 + grow)
 
                 merged.append((x1, y1, x2, y2, best_s))
 
+    
+    
+
     # Sort final merged boxes by confidence
     merged.sort(key=lambda b: b[4], reverse=True)
+
+    if return_debug:
+        return merged, clusters_debug
     return merged
 
 
@@ -915,29 +1029,32 @@ def _tile_starts(L, tile, step, offset):
     # clamp
     return [int(np.clip(s, 0, last)) for s in starts]
 
-def detect_building_boxes(img_rgb, conf=0.15, imgsz=640, debug=True, debug_tag="aoi"):
+def detect_building_boxes(img_rgb, conf=0.15, imgsz=640, debug=True, debug_tag="aoi", log=None, run_id=None):
     """
     Runs YOLO on the full image (NO manual resize; let Ultralytics letterbox correctly).
     Returns list of (x1, y1, x2, y2, score) in original image pixels.
     """
+    log = _get_log(log)
+    if debug and run_id is None:
+        run_id = f"{debug_tag}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
     assert img_rgb is not None
     assert img_rgb.dtype == np.uint8
     assert img_rgb.ndim == 3 and img_rgb.shape[2] == 3
 
     h, w = img_rgb.shape[:2]
-    logger.info(f"YOLO_DETECTOR[{debug_tag}]: model={MODEL_PATH}")
-    logger.info(f"YOLO model.names = {model.names}")
-    logger.info(f"YOLO_DETECTOR[{debug_tag}]: img shape={img_rgb.shape}, dtype={img_rgb.dtype}")
-    logger.info(f"YOLO_DETECTOR[{debug_tag}]: pixel min/max={int(img_rgb.min())}/{int(img_rgb.max())}")
+    log.info(f"YOLO_DETECTOR[{debug_tag}]: model={MODEL_PATH}")
+    log.info(f"YOLO model.names = {model.names}")
+    log.info(f"YOLO_DETECTOR[{debug_tag}]: img shape={img_rgb.shape}, dtype={img_rgb.dtype}")
+    log.info(f"YOLO_DETECTOR[{debug_tag}]: pixel min/max={int(img_rgb.min())}/{int(img_rgb.max())}")
 
     t0 = time.time()
     res = model(img_rgb, conf=conf, iou=0.4, imgsz=imgsz, verbose=False)[0]
     dt = (time.time() - t0) * 1000.0
-    logger.info(f"YOLO_DETECTOR[{debug_tag}]: inference_ms={dt:.1f}, conf={conf}, imgsz={imgsz}")
+    log.info(f"YOLO_DETECTOR[{debug_tag}]: inference_ms={dt:.1f}, conf={conf}, imgsz={imgsz}")
 
     boxes = []
     if res.boxes is None or len(res.boxes) == 0:
-        logger.info(f"YOLO_DETECTOR[{debug_tag}]: no boxes")
+        log.info(f"YOLO_DETECTOR[{debug_tag}]: no boxes")
         return boxes
 
     for b in res.boxes:
@@ -967,18 +1084,18 @@ def detect_building_boxes(img_rgb, conf=0.15, imgsz=640, debug=True, debug_tag="
             continue
 
         area = bw * bh
-        logger.info(
+        log.info(
             f"YOLO_DETECTOR[{debug_tag}]: box cls={cls_id} "
             f"x1={x1},y1={y1},x2={x2},y2={y2}, w={bw},h={bh}, area={area}, conf={score:.3f}"
         )
         boxes.append((x1, y1, x2, y2, score))
 
-    logger.info(f"YOLO_DETECTOR[{debug_tag}]: final boxes={len(boxes)}")
+    log.info(f"YOLO_DETECTOR[{debug_tag}]: final boxes={len(boxes)}")
 
     if debug:
-        out = DEBUG_DIR / f"yolo_{debug_tag}_{int(time.time()*1000)}.png"
+        out = _get_debug_dir(run_id) / f"yolo_{debug_tag}_{int(time.time()*1000)}.png"
         _draw_boxes(img_rgb, boxes, out, title=f"YOLO {debug_tag} ({len(boxes)})")
-        logger.info(f"YOLO_DETECTOR[{debug_tag}]: debug image saved: {out}")
+        log.info(f"YOLO_DETECTOR[{debug_tag}]: debug image saved: {out}")
 
     return boxes
 
@@ -993,8 +1110,12 @@ def detect_building_boxes_microtiles(
     debug_tag="tile",
     debug_save_every_tile=False,
     target_tile_factor=1.5,      # your requirement
-    overlap_cap=0.80,            # cap to avoid absurd tile explosion
-):
+    overlap_cap=0.80, 
+    run_id=None,           # cap to avoid absurd tile explosion
+    log=None):
+    log = _get_log(log)
+    if debug and run_id is None:
+        run_id = f"{debug_tag}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
     """
     Runs YOLO on overlapping tiles to improve recall.
 
@@ -1013,6 +1134,8 @@ def detect_building_boxes_microtiles(
     tile_conf = max(0.025, conf * 0.40)
 
     H, W = img_rgb.shape[:2]
+    if run_id is None:
+        run_id = f"{debug_tag}_{int(time.time()*1000)}"
 
     # ---------------------------------------------------------
     # AUTO TILE SIZE  OVERLAP (robust to mega boxes)
@@ -1038,7 +1161,7 @@ def detect_building_boxes_microtiles(
             forced = 256 if min(W, H) >= 256 else max(128, _round_to(min(W, H), 32))
             T = forced
             ov = 0.50
-            logger.warning(
+            log.warning(
                 f"YOLO_MICROTILES[{debug_tag}]: probe saw MEGA boxes => forcing tile_size={T}, overlap={ov:.2f}"
             )
         else:
@@ -1054,7 +1177,7 @@ def detect_building_boxes_microtiles(
             #ov = _clamp(ov + 0.20, 0.60, overlap_cap)
             ov = _clamp(ov + 0.10, 0.35, overlap_cap)
 
-            logger.info(
+            log.info(
                 f"YOLO_MICROTILES[{debug_tag}]: auto_tile B~{B}px => tile_size={T}, overlap={ov:.2f}"
             )
 
@@ -1066,15 +1189,15 @@ def detect_building_boxes_microtiles(
     # Ensure tile_size isn't bigger than the image (still works, but keep sane)
     tile_size = int(min(tile_size, max(1, W), max(1, H)))
 
-    # logger.info(
+    # log.info(
     #     f"YOLO_MICROTILES[{debug_tag}]: img shape={img_rgb.shape}, tile_size={tile_size}, overlap={overlap}, conf={conf}, imgsz={imgsz}"
     # )
-    # logger.info(
+    # log.info(
     #     f"YOLO_MICROTILES[{debug_tag}]: img shape={img_rgb.shape}, tile_size={tile_size}, "
     #     f"overlap={overlap}, conf={conf}, tile_imgsz=640"
     # )
 
-    logger.info(
+    log.info(
         f"YOLO_MICROTILES[{debug_tag}]: img shape={img_rgb.shape}, tile_size={tile_size}, "
         f"overlap={overlap}, conf={conf}, tile_imgsz={_tile_imgsz(tile_size)}"
     )
@@ -1095,7 +1218,7 @@ def detect_building_boxes_microtiles(
     if ys[-1] != last_y:
         ys.append(last_y)
 
-    logger.info(f"YOLO_MICROTILES[{debug_tag}]: tiles_x={len(xs)}, tiles_y={len(ys)}, step={step}")
+    log.info(f"YOLO_MICROTILES[{debug_tag}]: tiles_x={len(xs)}, tiles_y={len(ys)}, step={step}")
 
     all_boxes = []
     tile_count = 0
@@ -1165,7 +1288,7 @@ def detect_building_boxes_microtiles(
 
                             # Drop only if it's the classic junk mega (near-square)
                             # if _reject_tile_mega_as_junk(x1l, y1l, x2l, y2l, tile_size, tile_size):
-                            #     logger.warning(
+                            #     log.warning(
                             #         f"YOLO_MICROTILES[{debug_tag}]: JUNK tile-mega dropped "
                             #         f"w={bw:.0f} h={bh:.0f} score={score:.3f} at tile ({x},{y})"
                             #     )
@@ -1174,7 +1297,7 @@ def detect_building_boxes_microtiles(
                             # Fix A: keep non-junk mega as candidate (don’t drop it)
                             tile_mega_candidates.append((x1l, y1l, x2l, y2l, score))
 
-                            logger.warning(
+                            log.warning(
                                 f"YOLO_MICROTILES[{debug_tag}]: NON-JUNK MEGA tile-box kept-as-candidate "
                                 f"w={bw:.0f} h={bh:.0f} score={score:.3f} at tile ({x},{y})"
                             )
@@ -1280,131 +1403,50 @@ def detect_building_boxes_microtiles(
 
                     if retry_added > 0:
                         tile_boxes += retry_added
-                        logger.warning(
+                        log.warning(
                             f"YOLO_MICROTILES[{debug_tag}]: mega-only tile ({x},{y}) retried with 2x2 subtiles "
                             f"sub={sub} imgsz={sub_imgsz} recovered={retry_added}"
                         )
 
-                # #Fix B: mega-only tile fallback
-                # if tile_boxes == 0 and tile_mega_candidates:
-                #     # take best scoring mega candidate
-                #     x1m, y1m, x2m, y2m, sm = max(tile_mega_candidates, key=lambda t: t[4])
+                    if debug:
 
-                #     # convert to full-image coords
-                #     x1 = int(np.clip(x1m + x, 0, W - 1))
-                #     y1 = int(np.clip(y1m + y, 0, H - 1))
-                #     x2 = int(np.clip(x2m + x, 0, W - 1))
-                #     y2 = int(np.clip(y2m + y, 0, H - 1))
+                        out = _get_debug_dir(run_id) / f"tile_retry_{debug_tag}_x{x}_y{y}_sub{sub}_{int(time.time()*1000)}.png"
+                        # draw *subtile* boxes is more work; easiest is draw tile_mega_candidates so you see what triggered retry
+                        _save_tile_debug(img_rgb, x, y, tile_size, tile_mega_candidates, out,
+                                         title=f"mega-only tile → subtile retry (recovered={retry_added})")
 
-                #     if x2 > x1 and y2 > y1:
-                #         # apply same padding logic (optional but consistent)
-                #         bw_pix = max(1, x2 - x1)
-                #         bh_pix = max(1, y2 - y1)
-                #         min_side = min(bw_pix, bh_pix)
-                #         max_side = max(bw_pix, bh_pix)
+                
 
-                #         PAD = max(
-                #             16,
-                #             int(0.12 * min_side),
-                #             int(0.04 * max_side),
-                #         )
-                #         PAD = int(np.clip(PAD, 16, 96))
-
-                #         x1 = int(np.clip(x1 - PAD, 0, W - 1))
-                #         y1 = int(np.clip(y1 - PAD, 0, H - 1))
-                #         x2 = int(np.clip(x2 + PAD, 0, W - 1))
-                #         y2 = int(np.clip(y2 + PAD, 0, H - 1))
-
-                #         all_boxes.append((x1, y1, x2, y2, sm))
-                #         tile_boxes += 1
-
-                #         logger.warning(
-                #             f"YOLO_MICROTILES[{debug_tag}]: mega-only tile fallback added 1 box "
-                #             f"score={sm:.3f} at tile ({x},{y})"
-                #         )
-
-
-
-                # ----------------------------
-                # FIX 2: Retry mega-only tiles
-                # ----------------------------
-                # if tile_boxes == 0 and tile_had_mega:
-                #     retry_conf = float(np.clip(max(tile_conf, 0.15), 0.12, 0.35))
-                #     t1 = time.time()
-                #     res2 = model(crop, conf=retry_conf, iou=0.4, imgsz=tile_imgsz, verbose=False)[0]
-                #     dt2 = (time.time() - t1) * 1000.0
-                #     total_infer_ms += dt2
-
-                #     retry_added = 0
-                #     if res2.boxes is not None and len(res2.boxes) > 0:
-                #         for b2 in res2.boxes:
-                #             score2 = float(b2.conf.item())
-                #             if score2 < retry_conf:
-                #                 continue
-                #             cls2 = int(b2.cls.item()) if b2.cls is not None else -1
-                #             if cls2 != BUILDING_CLASS_ID:
-                #                 continue
-
-                #             x1l2, y1l2, x2l2, y2l2 = b2.xyxy[0].tolist()
-                #             bw2 = float(x2l2) - float(x1l2)
-                #             bh2 = float(y2l2) - float(y1l2)
-
-                #             aspect2 = max(bw2 / max(1.0, bh2), bh2 / max(1.0, bw2))
-                #             if aspect2 > MAX_ASPECT:
-                #                 continue
-                #             if bw2 < MIN_BOX_PX or bh2 < MIN_BOX_PX:
-                #                 continue
-                #             if min(bw2, bh2) < MIN_THICK_PX:
-                #                 continue
-
-                #             # reject junky near-square mega-ish boxes
-                #             if _reject_tile_mega_as_junk(x1l2, y1l2, x2l2, y2l2, tile_size, tile_size):
-                #                 continue
-
-                #             x1 = int(np.clip(x1l2 + x, 0, W - 1))
-                #             y1 = int(np.clip(y1l2 + y, 0, H - 1))
-                #             x2 = int(np.clip(x2l2 + x, 0, W - 1))
-                #             y2 = int(np.clip(y2l2 + y, 0, H - 1))
-                #             if x2 <= x1 or y2 <= y1:
-                #                 continue
-
-                #             bw_pix = max(1, x2 - x1)
-                #             bh_pix = max(1, y2 - y1)
-                #             PAD = max(12, int(0.06 * min(bw_pix, bh_pix)))
-                #             PAD = int(np.clip(PAD, 12, 40))
-                #             x1 = int(np.clip(x1 - PAD, 0, W - 1))
-                #             y1 = int(np.clip(y1 - PAD, 0, H - 1))
-                #             x2 = int(np.clip(x2 + PAD, 0, W - 1))
-                #             y2 = int(np.clip(y2 + PAD, 0, H - 1))
-
-                #             all_boxes.append((x1, y1, x2, y2, score2))
-                #             retry_added += 1
-
-                #     if retry_added > 0:
-                #         tile_boxes += retry_added
-                #         logger.warning(
-                #             f"YOLO_MICROTILES[{debug_tag}]: tile ({x},{y}) RETRY recovered {retry_added} boxes "
-                #             f"(retry_conf={retry_conf:.2f}, retry_ms={dt2:.1f})"
-                #         )
-
-                logger.info(
+                log.info(
                     f"YOLO_MICROTILES[{debug_tag}]: tile#{tile_count} origin=({x},{y}) "
                     f"infer_ms={dt:.1f} boxes={tile_boxes}"
                 )
 
 
 
-    logger.info(
+    log.info(
         f"YOLO_MICROTILES[{debug_tag}]: total tiles={tile_count}, total_infer_ms={total_infer_ms:.1f}, total_boxes={len(all_boxes)}"
     )
     # if tile_count > 500:
-    #     logger.warning("YOLO_MICROTILES: too many tiles, reducing overlap")
+    #     log.warning("YOLO_MICROTILES: too many tiles, reducing overlap")
     #     overlap = max(0.35, overlap - 0.1)
 
     if debug:
-        out = DEBUG_DIR / f"yolo_microtiles_{debug_tag}_{int(time.time()*1000)}.png"
-        _draw_boxes(img_rgb, all_boxes, out, title=f"YOLO microtiles {debug_tag} ({len(all_boxes)})")
-        logger.info(f"YOLO_MICROTILES[{debug_tag}]: debug image saved: {out}")
+
+        base = f"yolo_microtiles_raw_{run_id}"
+        img_path = _get_debug_dir(run_id) / f"{base}.png"
+        json_path = _get_debug_dir(run_id) / f"{base}.json"
+        _draw_boxes(img_rgb, all_boxes, img_path, title=f"YOLO raw {debug_tag} ({len(all_boxes)})")
+        _save_json({
+            "stage": "raw",
+            "run_id": run_id,
+            "debug_tag": debug_tag,
+            "image_wh": [W, H],
+            "microtiles": {"tile_size": tile_size, "overlap": overlap, "step": step, "offsets": offsets},
+            "boxes": [{"x1":b[0],"y1":b[1],"x2":b[2],"y2":b[3],"conf":float(b[4])} for b in all_boxes],
+        }, json_path)
+
+        log.info(f"YOLO_MICROTILES[{debug_tag}]: debug image saved: {img_path}, and json {json_path}")
 
     # -----------------------------
     # GLOBAL NMS  SAFE CONTAINMENT
@@ -1446,7 +1488,7 @@ def detect_building_boxes_microtiles(
     mega_boxes = [b for b in all_boxes if _is_mega_box(b, W, H)]
 
     if len(mega_boxes) > 0:
-        logger.warning(
+        log.warning(
             f"YOLO_MICROTILES[{debug_tag}]: found {len(mega_boxes)} MEGA boxes on full image; "
             f"they will NOT be used for containment suppression."
         )
@@ -1491,15 +1533,29 @@ def detect_building_boxes_microtiles(
         if keep:
             nms_boxes.append(box)
 
-    logger.info(
+    log.info(
         f"YOLO_MICROTILES[{debug_tag}]: NMS reduced boxes "
         f"{len(working)} -> {len(nms_boxes)}"
     )
 
     all_boxes = nms_boxes
-    logger.info(
+    log.info(
         f"YOLO_MICROTILES[{debug_tag}]: FINAL buildings after NMS+containment = {len(all_boxes)}"
     )
+
+    if debug:
+        base = f"yolo_microtiles_nms_{run_id}"
+        img_path = _get_debug_dir(run_id) / f"{base}.png"
+        json_path = _get_debug_dir(run_id) / f"{base}.json"
+        _draw_boxes(img_rgb, all_boxes, img_path, title=f"YOLO NMS {debug_tag} ({len(all_boxes)})")
+        _save_json({
+            "stage": "nms",
+            "run_id": run_id,
+            "debug_tag": debug_tag,
+            "image_wh": [W, H],
+            "microtiles": {"tile_size": tile_size, "overlap": overlap, "step": step, "offsets": offsets},
+            "boxes": [{"x1":b[0],"y1":b[1],"x2":b[2],"y2":b[3],"conf":float(b[4])} for b in all_boxes],
+        }, json_path)
 
 
     before = len(all_boxes)
@@ -1536,10 +1592,24 @@ def detect_building_boxes_microtiles(
     )
     after = len(frag)
     if after != before_frag:
-        logger.warning(f"YOLO_MICROTILES[{debug_tag}]: fragment_fusion merged {before_frag} -> {after}")
+        log.warning(f"YOLO_MICROTILES[{debug_tag}]: fragment_fusion merged {before_frag} -> {after}")
 
     all_boxes = keep + frag
     all_boxes.sort(key=lambda b: b[4], reverse=True)
+
+
+    if debug:
+        base = f"yolo_microtiles_fused_{run_id}"
+        img_path = _get_debug_dir(run_id) / f"{base}.png"
+        json_path = _get_debug_dir(run_id) / f"{base}.json"
+        _draw_boxes(img_rgb, all_boxes, img_path, title=f"YOLO fused {debug_tag} ({len(all_boxes)})")
+        _save_json({
+            "stage": "fused",
+            "run_id": run_id,
+            "debug_tag": debug_tag,
+            "image_wh": [W, H],
+            "boxes": [{"x1":b[0],"y1":b[1],"x2":b[2],"y2":b[3],"conf":float(b[4])} for b in all_boxes],
+        }, json_path)
 
 
 
@@ -1554,13 +1624,13 @@ def detect_building_boxes_microtiles(
     # )
     after = len(all_boxes)
     if after != before:
-        logger.warning(
+        log.warning(
             f"YOLO_MICROTILES[{debug_tag}]: fragment_fusion merged {before} -> {after}"
         )
 
     if debug:
-        out = DEBUG_DIR / f"yolo_fused_{debug_tag}_{int(time.time()*1000)}.png"
+        out = _get_debug_dir(run_id) / f"yolo_fused_{debug_tag}_{int(time.time()*1000)}.png"
         _draw_boxes(img_rgb, all_boxes, out, title=f"YOLO fused {debug_tag} ({len(all_boxes)})")
-        logger.info(f"YOLO_MICROTILES[{debug_tag}]: fused debug image saved: {out}")
+        log.info(f"YOLO_MICROTILES[{debug_tag}]: fused debug image saved: {out}")
 
     return all_boxes

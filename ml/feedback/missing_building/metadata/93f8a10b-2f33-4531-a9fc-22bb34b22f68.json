@@ -1,0 +1,46 @@
+{
+  "id": "93f8a10b-2f33-4531-a9fc-22bb34b22f68",
+  "type": "missing_building",
+  "timestamp": "2026-01-29T13:25:28.964651+00:00",
+  "image": "ml/feedback/missing_building/images/93f8a10b-2f33-4531-a9fc-22bb34b22f68.png",
+  "mask": "ml/feedback/missing_building/masks/93f8a10b-2f33-4531-a9fc-22bb34b22f68.png",
+  "debug_mask": "ml/feedback/missing_building/debug/93f8a10b-2f33-4531-a9fc-22bb34b22f68_mask_dbg.png",
+  "debug_overlay": "ml/feedback/missing_building/debug/93f8a10b-2f33-4531-a9fc-22bb34b22f68_overlay.png",
+  "debug_bbox": "ml/feedback/missing_building/debug/93f8a10b-2f33-4531-a9fc-22bb34b22f68_bbox.png",
+  "bbox_xyxy": [
+    261,
+    261,
+    762,
+    762
+  ],
+  "mask_coverage": 0.2413177490234375,
+  "mask_touches_border": false,
+  "base_mask_coverage": 0.2413177490234375,
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          89.54018086194993,
+          28.875266974462587
+        ],
+        [
+          89.54038202762605,
+          28.875261102616932
+        ],
+        [
+          89.5403900742531,
+          28.874857118840083
+        ],
+        [
+          89.54017952084543,
+          28.87485242134506
+        ],
+        [
+          89.54018086194993,
+          28.875266974462587
+        ]
+      ]
+    ]
+  }
+}

@@ -29,12 +29,24 @@ from shapely.ops import transform as shp_transform
 from rasterio.transform import Affine
 #from ml.yolo_detector import detect_building_boxes_microtiles
 from shapely.geometry import box as shp_box
+from logging.handlers import RotatingFileHandler
+from datetime import datetime
+
 
 from ml.yolo_detector import (
     detect_building_boxes,
     detect_building_boxes_microtiles,
     detect_building_boxes_ensemble,
 )
+
+
+
+BOOT_LOG = logging.getLogger("ml.detect_buildings_aoi")
+BOOT_LOG.setLevel(logging.INFO)
+if not any(isinstance(h, logging.StreamHandler) for h in BOOT_LOG.handlers):
+    BOOT_LOG.addHandler(logging.StreamHandler(sys.stdout))
+
+
 
 TMP_DIR = "ml/tmp"
 os.makedirs(TMP_DIR, exist_ok=True)
@@ -45,48 +57,11 @@ OSM_CACHE_DIR = "ml/osm_cache_local"
 OSM_CACHE_INDEX = os.path.join(OSM_CACHE_DIR, "osm_cache_index.geojson")
 os.makedirs(OSM_CACHE_DIR, exist_ok=True)
 
-# --------------------------------------------------
-# LOGGING
-# --------------------------------------------------
-#logging.basicConfig(level=logging.INFO)
-
-
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
-formatter = logging.Formatter(
-    "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-)
-
-# ---- File handler ----
-file_handler = logging.FileHandler("detect_buildings_aoi.log", mode="a")
-file_handler.setFormatter(formatter)
-file_handler.setLevel(logging.INFO)
-
-# ---- STDOUT handler ----
-stdout_handler = logging.StreamHandler(sys.stdout)
-stdout_handler.setFormatter(formatter)
-stdout_handler.setLevel(logging.INFO)
-
-# Avoid duplicate logs
-# if not logger.handlers:
-#     logger.addHandler(file_handler)
-#     logger.addHandler(stdout_handler)
-
-if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
-    logger.addHandler(file_handler)
-
-if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
-    logger.addHandler(stdout_handler)
-
-
-
 
 # --- Drop mega / strip boxes on tiles ---
 MEGA_AREA_THR_TILE   = 0.45   # drop if padded box >45% of tile area
 MEGA_SIDE_THR_TILE   = 0.92   # drop if box spans >92% of tile width or height
 
-STRIP_SIDE_THR_TILE  = 0.94   # near-full width or height
 STRIP_OTHER_MAX_TILE = 0.45   # ...while other side is still thick enough -> it's a strip, drop
 
 # Confidence escape hatch (keep only if extremely confident)
@@ -96,11 +71,15 @@ MEGA_KEEP_CONF = 0.92
 
 MEGA_AREA_THR_AOI  = 0.60
 MEGA_SIDE_THR_AOI  = 0.95
-STRIP_SIDE_THR_AOI = 0.96
+STRIP_SIDE_THR_AOI = 0.90
+STRIP_OTHER_THR_AOI = 0.20
+
+STRIP_SIDE_THR_TILE = 0.92
+STRIP_OTHER_THR_TILE = 0.22
 STRIP_OTHER_MAX_AOI = 0.55
 MEGA_KEEP_CONF_AOI = 0.95
 
-
+MIN_MASK_AREA_M2 = 7.0  # tune: 5–20 m² depending on smallest buildings you want
 # --------------------------------------------------
 # TILING CONFIG
 # --------------------------------------------------
@@ -149,7 +128,7 @@ os.makedirs(OUT_DIR, exist_ok=True)
 # DEVICE
 # --------------------------------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-logging.info("Using device: %s", device)
+BOOT_LOG.info("Using device: %s", device)
 
 # --------------------------------------------------
 # LOAD SAM
@@ -161,7 +140,103 @@ sam.eval()
 #decoder_ckpt = "ml/sam_training/checkpoints/sam_decoder_finetuned.pth.epoch12.pth"
 decoder_ckpt="SAM_TRAINED_MODEL/sam_decoder_finetuned.pth.epoch23.pth"
 sam.mask_decoder.load_state_dict(torch.load(decoder_ckpt, map_location=device))
-logging.info("Fine-tuned SAM decoder loaded")
+BOOT_LOG.info("Fine-tuned SAM decoder loaded")
+
+
+
+LOGS_DIR = os.path.join(OUT_DIR, "logs") if "OUT_DIR" in globals() else "ml/output/logs"
+os.makedirs(LOGS_DIR, exist_ok=True)
+
+
+class ContextAdapter(logging.LoggerAdapter):
+    """
+    Adds run_id/stage/det_id/tile_id automatically to every log line.
+    """
+    def process(self, msg, kwargs):
+        extra = kwargs.get("extra", {})
+        merged = dict(self.extra)
+        merged.update(extra)
+        kwargs["extra"] = merged
+        return msg, kwargs
+
+    def with_ctx(self, **updates):
+        new_extra = dict(self.extra)
+        for k, v in updates.items():
+            if v is not None:
+                new_extra[k] = v
+        return ContextAdapter(self.logger, new_extra)
+
+
+def setup_logging(run_id: str, level=logging.INFO, also_stdout=True):
+    """
+    Creates a per-run log file:
+      ml/output/logs/<run_id>.log
+
+    Returns:
+      base_logger (ContextAdapter) with run_id already set.
+    """
+    logger_name = f"ml.detect_buildings_aoi.{run_id}"
+    base_logger = logging.getLogger(logger_name)
+    base_logger.setLevel(level)
+    base_logger.propagate = False
+
+    # Prevent duplicate handlers if detect_buildings() called multiple times in same process
+    if not getattr(base_logger, "_configured", False):
+        fmt = (
+            "%(asctime)s | %(levelname)s | %(name)s | "
+            "run=%(run_id)s stage=%(stage)s det=%(det_id)s tile=%(tile_id)s | %(message)s"
+        )
+        formatter = logging.Formatter(fmt)
+
+        # Per-run file
+        logfile = os.path.join(LOGS_DIR, f"{run_id}.log")
+        fh = RotatingFileHandler(logfile, maxBytes=25 * 1024 * 1024, backupCount=3)
+        fh.setLevel(level)
+        fh.setFormatter(formatter)
+        base_logger.addHandler(fh)
+
+        if also_stdout:
+            sh = logging.StreamHandler(sys.stdout)
+            sh.setLevel(level)
+            sh.setFormatter(formatter)
+            base_logger.addHandler(sh)
+
+        base_logger._configured = True  # type: ignore[attr-defined]
+        base_logger._logfile = logfile  # type: ignore[attr-defined]
+
+    # default context fields (never missing in format)
+    adapter = ContextAdapter(
+        base_logger,
+        {
+            "run_id": run_id,
+            "stage": "-",
+            "det_id": "-",
+            "tile_id": "-",
+        },
+    )
+    return adapter
+
+
+def get_logger(run_id: str, stage: str = "-", det_id: str = "-", tile_id: str = "-",
+               level=logging.INFO, also_stdout=True) -> ContextAdapter:
+    """
+    Convenience entry: ensures per-run log exists and returns adapter with ctx set.
+    """
+    base = setup_logging(run_id, level=level, also_stdout=also_stdout)
+    return base.with_ctx(stage=stage, det_id=det_id, tile_id=tile_id)
+
+
+def safe_json_dump(path: str, obj: dict, log: logging.Logger | None = None):
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(obj, f, indent=2)
+        os.replace(tmp, path)
+    except Exception:
+        if log is not None:
+            log.exception(f"Failed to write json: {path}")
+        else:
+            raise
 
 
 predictor = SamPredictor(sam)
@@ -192,6 +267,448 @@ ox.settings.log_console = False
 # --------------------------------------------------
 # HELPERS
 # --------------------------------------------------
+SAM_DEBUG_DIR = os.path.join(OUT_DIR, "sam_debug")
+os.makedirs(SAM_DEBUG_DIR, exist_ok=True)
+
+
+def _save_sam_debug(
+    log: logging.Logger | None,
+    run_id: str,
+    stage_tag: str,
+    img_rgb_uint8: np.ndarray | None,
+    box_xyxy,
+    mask_bool,
+    score,
+    dbg,
+    det_id: str | None = None,
+    tile_id: str | None = None,
+):
+    """
+    Saves (per det):
+      - overlay PNG (mask + box + optional best_prompt_box)
+      - mask PNG
+      - meta JSON (score, dbg, box, det_id, stage, tile_id)
+
+    Also logs the exact saved paths (critical for later debugging).
+    """
+    if img_rgb_uint8 is None:
+        if log:
+            log.warning("SAM_DEBUG skipped: img is None")
+        return None
+
+    det_id = det_id or "det-unknown"
+    tile_id = tile_id or "-"
+
+    d = os.path.join(SAM_DEBUG_DIR, run_id, stage_tag)
+    os.makedirs(d, exist_ok=True)
+
+    x1, y1, x2, y2 = [int(v) for v in box_xyxy]
+    # stable base name includes stage + det_id
+    base = f"{stage_tag}_{det_id}_x{x1}_y{y1}_x{x2}_y{y2}_s{float(score):.3f}" if score is not None \
+           else f"{stage_tag}_{det_id}_x{x1}_y{y1}_x{x2}_y{y2}_sNA"
+
+    mask_path = os.path.join(d, f"{base}_mask.png")
+    overlay_path = os.path.join(d, f"{base}_overlay.png")
+    meta_path = os.path.join(d, f"{base}_meta.json")
+
+    # mask png
+    if mask_bool is not None:
+        m = (mask_bool.astype(np.uint8) * 255)
+        cv2.imwrite(mask_path, m)
+
+    # overlay png
+    overlay = img_rgb_uint8.copy()
+    if mask_bool is not None:
+        overlay[mask_bool] = (0.35 * overlay[mask_bool] + 0.65 * np.array([0, 255, 0])).astype(np.uint8)
+
+    # YOLO/sub-box in blue
+    cv2.rectangle(overlay, (x1, y1), (x2, y2), (255, 0, 0), 2)
+
+    # best_prompt_box in red if present
+    if isinstance(dbg, dict) and "best_prompt_box" in dbg:
+        bx1, by1, bx2, by2 = dbg["best_prompt_box"]
+        cv2.rectangle(overlay, (int(bx1), int(by1)), (int(bx2), int(by2)), (0, 0, 255), 2)
+
+    cv2.imwrite(overlay_path, overlay)
+
+    meta = {
+        "run_id": run_id,
+        "stage": stage_tag,
+        "det_id": det_id,
+        "tile_id": tile_id,
+        "box": [x1, y1, x2, y2],
+        "score": float(score) if score is not None else None,
+        "dbg": dbg if isinstance(dbg, dict) else {},
+    }
+    safe_json_dump(meta_path, meta, log=log)
+
+    if log:
+        log.info(
+            "SAM_DEBUG saved base=%s overlay=%s mask=%s meta=%s",
+            base, overlay_path, mask_path if mask_bool is not None else "-", meta_path
+        )
+
+    return {"base": base, "overlay": overlay_path, "mask": (mask_path if mask_bool is not None else None), "meta": meta_path}
+
+def _box_expand_and_shift_xyxy(box, W, H, scale=1.0, dx=0.0, dy=0.0):
+    x1, y1, x2, y2 = [float(v) for v in box]
+    cx = 0.5 * (x1 + x2)
+    cy = 0.5 * (y1 + y2)
+    bw = max(2.0, x2 - x1)
+    bh = max(2.0, y2 - y1)
+
+    bw2 = bw * scale
+    bh2 = bh * scale
+
+    cx2 = cx + dx
+    cy2 = cy + dy
+
+    nx1 = cx2 - 0.5 * bw2
+    ny1 = cy2 - 0.5 * bh2
+    nx2 = cx2 + 0.5 * bw2
+    ny2 = cy2 + 0.5 * bh2
+
+    nx1 = int(np.clip(nx1, 0, W - 1))
+    ny1 = int(np.clip(ny1, 0, H - 1))
+    nx2 = int(np.clip(nx2, 0, W - 1))
+    ny2 = int(np.clip(ny2, 0, H - 1))
+
+    # keep valid
+    if nx2 <= nx1 + 1 or ny2 <= ny1 + 1:
+        return None
+    return (nx1, ny1, nx2, ny2)
+
+def _boundary_touch_ratio(mask_bool):
+    # fraction of boundary pixels that are "on" (captures chopped masks)
+    if mask_bool is None or mask_bool.size == 0:
+        return 1.0
+    m = mask_bool.astype(np.uint8)
+    top = m[0, :].mean()
+    bot = m[-1, :].mean()
+    left = m[:, 0].mean()
+    right = m[:, -1].mean()
+    return float(0.25 * (top + bot + left + right))
+
+def _mask_solidity(mask_bool):
+    # area / convex hull area, cheap and robust
+    m = (mask_bool.astype(np.uint8) * 255)
+    cnts, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts:
+        return 0.0
+    c = max(cnts, key=cv2.contourArea)
+    area = float(cv2.contourArea(c))
+    if area <= 1.0:
+        return 0.0
+    hull = cv2.convexHull(c)
+    harea = float(cv2.contourArea(hull))
+    if harea <= 1.0:
+        return 0.0
+    return float(area / harea)
+
+
+def predict_mask_multi_prompt(
+    predictor,
+    yolo_box_xyxy,               # (x1,y1,x2,y2) in full image coords
+    yolo_conf=0.5,               # used only for mild bias
+    scales=(1.00, 1.15, 1.28, 1.40),
+    shift_frac=0.03,             # shift as fraction of min(box_w,box_h)
+    max_shift_px=18,
+    min_shift_px=6,
+    touch_thr=0.010,             # boundary touch threshold
+    max_union=2,                 # union top-k masks when they complement
+):
+    """
+    Returns: best_mask_bool (H,W), best_score (float), debug dict
+
+    Key improvements:
+      1) Coverage penalty vs ORIGINAL YOLO box -> stops "half roof" shifted winners
+      2) Small shift penalty -> prevents large dx/dy prompts from dominating
+      3) Union rule relaxed based on gain -> allows completing long roofs
+      4) Rescue mode uses same improved scoring and updates dbg at the end
+    """
+    H, W = predictor.original_size
+
+    x1, y1, x2, y2 = [int(v) for v in yolo_box_xyxy]
+    bw0 = max(2, x2 - x1)
+    bh0 = max(2, y2 - y1)
+
+    # d = int(np.clip(shift_frac * min(bw0, bh0), min_shift_px, max_shift_px))
+    # shifts = [(0, 0), (d, 0), (-d, 0), (0, d), (0, -d)]
+
+    ar = bw0 / bh0
+
+    d_small = int(np.clip(shift_frac * min(bw0, bh0), min_shift_px, max_shift_px))
+
+    # new: long-axis shift
+    d_long = int(np.clip(0.12 * max(bw0, bh0), 18, 70))
+
+    shifts = [(0,0), (d_small,0), (-d_small,0), (0,d_small), (0,-d_small)]
+
+    if ar >= 2.2:
+        shifts += [(d_long,0), (-d_long,0), (2*d_long,0), (-2*d_long,0)]
+    elif ar <= 1/2.2:
+        shifts += [(0,d_long), (0,-d_long), (0,2*d_long), (0,-2*d_long)]
+
+    shift_ref = max(
+        max_shift_px,
+        int(0.12 * max(bw0, bh0))  # matches d_long upper bound
+    )
+
+    # ---------- scoring helpers ----------
+    obw = max(1, x2 - x1)
+    obh = max(1, y2 - y1)
+
+    def _coverage_penalty(mask_bool):
+        # Penalize masks whose bbox span is much smaller than the ORIGINAL YOLO box span.
+        # This kills "shifted half-roof" masks.
+        yy, xx = np.where(mask_bool)
+        if len(xx) < 10:
+            return 0.4  # small masks are generally bad; mild penalty
+        mx1 = int(xx.min()); mx2 = int(xx.max())
+        my1 = int(yy.min()); my2 = int(yy.max())
+        mw = max(1, mx2 - mx1)
+        mh = max(1, my2 - my1)
+
+        w_ratio = mw / obw
+        h_ratio = mh / obh
+
+        cover_pen = 0.0
+        # tune: 0.88 works well for long roofs; lower if you have very loose YOLO boxes
+        if w_ratio < 0.88:
+            cover_pen += 0.55 * (0.88 - w_ratio) / 0.88
+        if h_ratio < 0.88:
+            cover_pen += 0.35 * (0.88 - h_ratio) / 0.88
+
+        return float(np.clip(cover_pen, 0.0, 0.9))
+
+    
+
+    shift_ref = float(max(1, min(bw0, bh0)))  # normalize by smaller side of the prompt box
+
+    def _shift_penalty(dx, dy):
+        shift_norm = (abs(dx) + abs(dy)) / shift_ref
+        return 0.08 * float(min(1.0, shift_norm))
+    
+
+
+    def _composite_score(mask_bool, sam_score, touch, solidity, fill, dx, dy):
+        # discourage too tiny or too full (often background)
+        fill_pen = 0.0
+        if fill < 0.10:
+            fill_pen = 0.40
+        elif fill > 0.95:
+            fill_pen = 0.25
+
+        # boundary penalty (strong for chopped roofs)
+        touch_pen = 6.0 * max(0.0, float(touch) - float(touch_thr))
+
+        # solidity reward (cap)
+        sol_rew = 0.35 * float(np.clip(solidity, 0.0, 1.0))
+
+        # mild bias from yolo_conf (don’t dominate)
+        yolo_rew = 0.10 * float(np.clip(yolo_conf, 0.0, 1.0))
+
+        cover_pen = _coverage_penalty(mask_bool)
+        shift_pen = _shift_penalty(dx, dy)
+
+        return float(sam_score) + sol_rew + yolo_rew - touch_pen - fill_pen - cover_pen - shift_pen
+
+    def _union_top_masks(cands, start_mask, base_area, k):
+        if k <= 1:
+            return start_mask
+        union = start_mask.copy()
+        used = 1
+        for c in cands[1:]:
+            if used >= k:
+                break
+            m = c["mask"]
+            inter = float(np.logical_and(union, m).sum())
+            uni = float(np.logical_or(union, m).sum())
+            iou = inter / max(1.0, uni)
+
+            new_area = float(np.logical_or(union, m).sum())
+            gain = (new_area - float(union.sum())) / max(1.0, base_area)
+
+            # Relax union rule: allow if it adds meaningful area even if IoU is moderate
+            if (gain > 0.10 and iou < 0.90) or (gain > 0.06 and iou < 0.80):
+                union = np.logical_or(union, m)
+                used += 1
+        return union
+
+    # ---------- main candidate search ----------
+    candidates = []
+    tried = 0
+
+    for s in scales:
+        for (dx, dy) in shifts:
+            b = _box_expand_and_shift_xyxy((x1, y1, x2, y2), W, H, scale=s, dx=dx, dy=dy)
+            if b is None:
+                continue
+            tried += 1
+
+            box_in = np.array(b, dtype=np.float32)[None, :]
+            masks, scores, _ = predictor.predict(box=box_in, multimask_output=True)
+
+            if masks is None or len(masks) == 0:
+                continue
+
+            box_area = float(max(1, (b[2] - b[0]) * (b[3] - b[1])))
+
+            for mi in range(len(masks)):
+                m = masks[mi].astype(bool)
+                area = float(m.sum())
+                if area <= 25:
+                    continue
+
+                touch = _boundary_touch_ratio(m)
+                solidity = _mask_solidity(m)
+                fill = area / box_area
+
+                comp = _composite_score(m, float(scores[mi]), touch, solidity, fill, dx, dy)
+
+                candidates.append({
+                    "comp": comp,
+                    "sam": float(scores[mi]),
+                    "touch": float(touch),
+                    "sol": float(solidity),
+                    "fill": float(fill),
+                    "box": tuple(int(v) for v in b),
+                    "dx": int(dx),
+                    "dy": int(dy),
+                    "scale": float(s),
+                    "mask": m,
+                })
+
+    if not candidates:
+        return None, -1.0, {"tried": tried, "kept": 0}
+
+    candidates.sort(key=lambda c: c["comp"], reverse=True)
+    best = candidates[0]
+
+    best_mask = best["mask"]
+    best_score = float(best["comp"])
+
+    # union in main mode
+    if max_union > 1:
+        base_area = float(best_mask.sum())
+        best_mask = _union_top_masks(candidates, best_mask, base_area, max_union)
+
+    # ---------------------------
+    # LOW-FILL RESCUE RETRY (long roofs)
+    # ---------------------------
+    # If best mask under-fills its own prompt box, try a wider prompt set.
+    if best["fill"] < 0.45:
+        rescue_scales = (1.10, 1.25, 1.40, 1.55, 1.70)
+        rescue_max_union = max(3, max_union)
+
+        rescue_candidates = []
+
+        for s in rescue_scales:
+            for (dx, dy) in shifts:
+                b2 = _box_expand_and_shift_xyxy((x1, y1, x2, y2), W, H, scale=s, dx=dx, dy=dy)
+                if b2 is None:
+                    continue
+
+                box_in2 = np.array(b2, dtype=np.float32)[None, :]
+                masks2, scores2, _ = predictor.predict(box=box_in2, multimask_output=True)
+                if masks2 is None or len(masks2) == 0:
+                    continue
+
+                box_area2 = float(max(1, (b2[2] - b2[0]) * (b2[3] - b2[1])))
+
+                for mi in range(len(masks2)):
+                    m2 = masks2[mi].astype(bool)
+                    area2 = float(m2.sum())
+                    if area2 <= 25:
+                        continue
+
+                    touch2 = _boundary_touch_ratio(m2)
+                    sol2 = _mask_solidity(m2)
+                    fill2 = area2 / box_area2
+
+                    comp2 = _composite_score(m2, float(scores2[mi]), touch2, sol2, fill2, dx, dy)
+
+                    rescue_candidates.append({
+                        "comp": comp2,
+                        "sam": float(scores2[mi]),
+                        "touch": float(touch2),
+                        "sol": float(sol2),
+                        "fill": float(fill2),
+                        "box": tuple(int(v) for v in b2),
+                        "dx": int(dx),
+                        "dy": int(dy),
+                        "scale": float(s),
+                        "mask": m2,
+                    })
+
+        if rescue_candidates:
+            rescue_candidates.sort(key=lambda c: c["comp"], reverse=True)
+            rbest = rescue_candidates[0]
+
+            rmask = rbest["mask"]
+            if rescue_max_union > 1:
+                base_area = float(rmask.sum())
+                rmask = _union_top_masks(rescue_candidates, rmask, base_area, rescue_max_union)
+
+            # accept rescue if it meaningfully increases area and isn't more chopped
+            gain_ratio = (float(rmask.sum()) - float(best_mask.sum())) / max(1.0, float(best_mask.sum()))
+            if gain_ratio > 0.10 and (_boundary_touch_ratio(rmask) <= _boundary_touch_ratio(best_mask) + 0.01):
+                best_mask = rmask
+                best_score = float(rbest["comp"])
+                best = rbest  # so dbg reflects rescue winner
+    
+    # ---------------------------
+    # WIDE-BOX SPLIT RESCUE
+    # ---------------------------
+    bw = max(2, x2 - x1)
+    bh = max(2, y2 - y1)
+    ar = float(bw) / float(bh)
+
+    #if best_mask is not None and best[4] < 0.60 and ar > 3.0 and bw >= 220:
+    best_sam = float(best.get("sam", 1.0))
+    if best_mask is not None and best_sam < 0.60 and ar > 3.0 and bw >= 220:
+        pad = int(0.08 * bw)  # overlap
+        mid = (x1 + x2) // 2
+
+        bL = (x1, y1, min(W, mid + pad), y2)
+        bR = (max(0, mid - pad), y1, x2, y2)
+
+        mL, sL, _ = predict_mask_multi_prompt(
+            predictor, bL, yolo_conf=yolo_conf,
+            scales=scales, shift_frac=shift_frac,
+            max_shift_px=max_shift_px, min_shift_px=min_shift_px,
+            touch_thr=touch_thr, max_union=max_union
+        )
+        mR, sR, _ = predict_mask_multi_prompt(
+            predictor, bR, yolo_conf=yolo_conf,
+            scales=scales, shift_frac=shift_frac,
+            max_shift_px=max_shift_px, min_shift_px=min_shift_px,
+            touch_thr=touch_thr, max_union=max_union
+        )
+
+        if mL is not None and mR is not None:
+            mU = np.logical_or(mL, mR)
+            # accept if it adds meaningful area and not more chopped
+            gain_ratio = (float(mU.sum()) - float(best_mask.sum())) / max(1.0, float(best_mask.sum()))
+            if gain_ratio > 0.08 and (_boundary_touch_ratio(mU) <= _boundary_touch_ratio(best_mask) + 0.02):
+                best_mask = mU
+
+    
+
+    dbg = {
+        "tried": int(tried),
+        "kept": int(len(candidates)),
+        "best_raw_sam": float(best.get("sam", 0.0)),
+        "best_touch": float(best.get("touch", 0.0)),
+        "best_solidity": float(best.get("sol", 0.0)),
+        "best_fill": float(best.get("fill", 0.0)),
+        "best_prompt_box": tuple(int(v) for v in best.get("box", (x1, y1, x2, y2))),
+        "best_score": float(best_score),
+        "best_dxdy": (int(best.get("dx", 0)), int(best.get("dy", 0))),
+        "best_scale": float(best.get("scale", 1.0)),
+    }
+
+    return best_mask, best_score, dbg
 
 
 def _expand_box_xyxy(x1, y1, x2, y2, W, H, scale=1.25):
@@ -257,7 +774,7 @@ def predict_mask_twopass_union(predictor, x1p, y1p, x2p, y2p, yconf, expand_scal
     box1_area = max(1, bw1 * bh1)
 
     # pass 1
-    box1 = np.array([x1p, y1p, x2p, y2p], dtype=np.float32)
+    box1 = np.array([x1p, y1p, x2p, y2p], dtype=np.float32)[None, :]
     masks1, scores1, _ = predictor.predict(box=box1, multimask_output=True)
     m1, s1, min_area = _pick_best_mask_for_box(masks1, scores1, box1_area, bw1, bh1, yconf)
 
@@ -267,7 +784,7 @@ def predict_mask_twopass_union(predictor, x1p, y1p, x2p, y2p, yconf, expand_scal
     bh2 = ey2 - ey1
     box2_area = max(1, bw2 * bh2)
 
-    box2 = np.array([ex1, ey1, ex2, ey2], dtype=np.float32)
+    box2 = np.array([ex1, ey1, ex2, ey2], dtype=np.float32)[None, :]
     masks2, scores2, _ = predictor.predict(box=box2, multimask_output=True)
     m2, s2, _ = _pick_best_mask_for_box(masks2, scores2, box2_area, bw2, bh2, yconf)
 
@@ -357,12 +874,89 @@ def is_mega_or_strip_box(x1p,y1p,x2p,y2p, tile_w,tile_h, yconf):
 
     mega = (area_frac >= MEGA_AREA_THR_TILE) or (w_frac >= MEGA_SIDE_THR_TILE) or (h_frac >= MEGA_SIDE_THR_TILE)
 
-    strip = ((w_frac >= STRIP_SIDE_THR_TILE and h_frac >= STRIP_OTHER_MAX_TILE) or
-             (h_frac >= STRIP_SIDE_THR_TILE and w_frac >= STRIP_OTHER_MAX_TILE))
+    strip = (w_frac >= STRIP_SIDE_THR_AOI and h_frac <= STRIP_OTHER_THR_AOI) or (
+        h_frac >= STRIP_SIDE_THR_AOI and w_frac <= STRIP_OTHER_THR_AOI
+    )
 
     if (mega or strip) and (yconf < MEGA_KEEP_CONF):
         return True
     return False
+
+
+def looks_like_container_box(x1, y1, x2, y2, W, H):
+    bw = max(0, x2 - x1)
+    bh = max(0, y2 - y1)
+    if bw <= 1 or bh <= 1:
+        return False
+
+    area_frac = (bw * bh) / float(W * H + 1e-9)
+    w_frac = bw / float(W + 1e-9)
+    h_frac = bh / float(H + 1e-9)
+    aspect = max(bw / float(bh + 1e-9), bh / float(bw + 1e-9))
+
+    # Heuristics tuned for AOI “strip/yard” boxes:
+    # - very large area
+    # - very wide strip
+    # - very tall strip
+    # - extreme aspect with moderate area
+    if area_frac >= 0.25:
+        return True
+    if w_frac >= 0.92 and h_frac >= 0.25:
+        return True
+    if h_frac >= 0.92 and w_frac >= 0.25:
+        return True
+    if aspect >= 6.0 and area_frac >= 0.12:
+        return True
+
+    return False
+
+
+def drop_container_boxes(boxes, W, H, conf_margin=0.06):
+    """
+    Removes 'container' boxes that wrap multiple smaller detections.
+    IMPORTANT: run this BEFORE NMS so container boxes don't suppress real boxes.
+    """
+    if not boxes:
+        return boxes
+
+    centers = [((x1 + x2) * 0.5, (y1 + y2) * 0.5) for (x1, y1, x2, y2, c) in boxes]
+    keep = [True] * len(boxes)
+
+    for i, (x1, y1, x2, y2, c) in enumerate(boxes):
+        contained_idxs = []
+        for j, (cx, cy) in enumerate(centers):
+            if j == i:
+                continue
+            if (cx >= x1 and cx <= x2 and cy >= y1 and cy <= y2):
+                contained_idxs.append(j)
+
+        contained = len(contained_idxs)
+        if contained < 1:
+            continue
+
+        # Strong rule: if it "looks like a container" and it contains others, drop it.
+        if looks_like_container_box(x1, y1, x2, y2, W, H):
+            keep[i] = False
+            logging.warning(
+                f"[AOI] Dropped container-like box i={i} conf={c:.3f} "
+                f"xyxy={[int(x1),int(y1),int(x2),int(y2)]} contained={contained}"
+            )
+            continue
+
+        # Soft rule: classic containment suppression
+        best_inside = c
+        for j in contained_idxs:
+            best_inside = max(best_inside, boxes[j][4])
+
+        if c + conf_margin < best_inside:
+            keep[i] = False
+            logging.warning(
+                f"[AOI] Dropped low-conf container box i={i} conf={c:.3f} "
+                f"best_inside={best_inside:.3f} xyxy={[int(x1),int(y1),int(x2),int(y2)]} contained={contained}"
+            )
+
+    return [b for k, b in zip(keep, boxes) if k]
+
 
 def is_mega_or_strip_box_aoi(x1p,y1p,x2p,y2p, W,H, yconf):
     bw = max(1, x2p-x1p); bh = max(1, y2p-y1p)
@@ -370,10 +964,23 @@ def is_mega_or_strip_box_aoi(x1p,y1p,x2p,y2p, W,H, yconf):
     w_frac = bw / max(1, W)
     h_frac = bh / max(1, H)
 
+
+    aspect = max(bw / bh, bh / bw)
+
+    # --- NEW: container-box heuristic (your failing case) ---
+    # If a box covers a large chunk of AOI, it is almost always a "container".
+    if area_frac >= 0.40:
+        return True
+    if (w_frac >= 0.75 and h_frac >= 0.35 and aspect >= 1.6 and area_frac >= 0.25):
+        return True
+
     mega = (area_frac >= MEGA_AREA_THR_AOI) or (w_frac >= MEGA_SIDE_THR_AOI) or (h_frac >= MEGA_SIDE_THR_AOI)
 
-    strip = ((w_frac >= STRIP_SIDE_THR_AOI and h_frac >= STRIP_OTHER_MAX_AOI) or
-             (h_frac >= STRIP_SIDE_THR_AOI and w_frac >= STRIP_OTHER_MAX_AOI))
+    # strip = ((w_frac >= STRIP_SIDE_THR_AOI and h_frac >= STRIP_OTHER_MAX_AOI) or
+    #          (h_frac >= STRIP_SIDE_THR_AOI and w_frac >= STRIP_OTHER_MAX_AOI))
+
+    strip = ((w_frac >= STRIP_SIDE_THR_AOI and h_frac <= STRIP_OTHER_MAX_AOI) or
+         (h_frac >= STRIP_SIDE_THR_AOI and w_frac <= STRIP_OTHER_MAX_AOI))
 
     if (mega or strip) and (yconf < MEGA_KEEP_CONF_AOI):
         return True
@@ -447,7 +1054,7 @@ def load_osm_cache_best_effort(bounds, raster_crs="EPSG:3857"):
         if idx.empty:
             return None
     except Exception as e:
-        logging.warning("Failed to read OSM cache index: %s", e)
+        BOOT_LOG.warning("Failed to read OSM cache index: %s", e)
         return None
 
     west, south, east, north = bounds
@@ -480,7 +1087,7 @@ def load_osm_cache_best_effort(bounds, raster_crs="EPSG:3857"):
         if gdf is None or gdf.empty:
             return None
     except Exception as e:
-        logging.warning("Failed to load fallback cached OSM file: %s", e)
+        BOOT_LOG.warning("Failed to load fallback cached OSM file: %s", e)
         return None
 
     # Clip cached buildings to requested AOI bounds
@@ -489,14 +1096,14 @@ def load_osm_cache_best_effort(bounds, raster_crs="EPSG:3857"):
         clipped = gpd.clip(gdf, req_gdf)
         if clipped.empty:
             return None
-        logging.warning(
+        BOOT_LOG.warning(
             "Using fallback OSM cache from %s (overlap_area=%.1f)",
             os.path.basename(best_path),
             float(best.get("overlap_area", 0.0)),
         )
         return clipped
     except Exception as e:
-        logging.warning("Fallback clip failed: %s", e)
+        BOOT_LOG.warning("Fallback clip failed: %s", e)
         return None
 
 
@@ -515,7 +1122,7 @@ def save_osm_cache(gdf, bounds):
         gdf = gdf.set_crs("EPSG:4326", allow_override=True)
     
     gdf.to_file(path, driver="GeoJSON")
-    logging.info("OSM cache saved: %s", path)
+    BOOT_LOG.info("OSM cache saved: %s", path)
 
     # ---- Update cache index ----
     west, south, east, north = bounds
@@ -535,7 +1142,7 @@ def save_osm_cache(gdf, bounds):
                 idx = idx[idx["key"] != key]
             idx = pd.concat([idx, rec], ignore_index=True)
         except Exception as e:
-            logging.warning("Failed reading OSM cache index, recreating: %s", e)
+            BOOT_LOG.warning("Failed reading OSM cache index, recreating: %s", e)
             idx = rec
     else:
         idx = rec
@@ -550,10 +1157,10 @@ def load_osm_cache(bounds):
         try:
             gdf = gpd.read_file(path)
             if not gdf.empty:
-                logging.info("Loaded OSM from cache")
+                BOOT_LOG.info("Loaded OSM from cache")
                 return gdf
         except Exception as e:
-            logging.warning("Failed to read OSM cache: %s", e)
+            BOOT_LOG.warning("Failed to read OSM cache: %s", e)
 
     return None
 
@@ -617,22 +1224,8 @@ def directional_halfplane_filter(shadow_mask, building_mask, dx, dy):
     out = np.zeros_like(shadow_mask, dtype=np.uint8)
     out[yy[proj > 0], xx[proj > 0]] = 1
     return out
-# def morph_cleanup(shadow_mask, open_iter=1, close_iter=1, min_area=200):
-#     k = np.ones((3,3), np.uint8)
-#     m = shadow_mask.astype(np.uint8)
 
-#     # remove thin spikes/noise
-#     m = cv2.morphologyEx(m, cv2.MORPH_OPEN, k, iterations=open_iter)
-#     # fill small gaps
-#     m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k, iterations=close_iter)
 
-#     # remove tiny blobs
-#     num, labels, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
-#     out = np.zeros_like(m)
-#     for i in range(1, num):
-#         if stats[i, cv2.CC_STAT_AREA] >= min_area:
-#             out[labels == i] = 1
-#     return out
 
 def morph_cleanup(shadow_mask, open_iter=1, close_iter=1, min_area=200):
     k = np.ones((3,3), np.uint8)
@@ -752,24 +1345,25 @@ def robust_shadow_length_from_mask(shadow_mask, seed_mask, dx, dy, min_bins=10):
 
     return float(np.mean(lengths))
 
-def estimate_height_with_retries(poly, img_rgb, transform, raster_crs, conf=None, max_tries=3):
+def estimate_height_with_retries(poly, img_rgb, transform, raster_crs, conf=None, max_tries=3,log=None):
     """
     Try shadow height estimation multiple times with progressively relaxed cfg.
     Returns shadow_info or None.
     """
     for i in range(min(max_tries, len(SHADOW_RETRY_LEVELS))):
         cfg = SHADOW_RETRY_LEVELS[i]
-        logging.info(f"[SHADOW] try={i+1} cfg={cfg}")
-        out = estimate_height_from_shadow(poly, img_rgb, transform, raster_crs, cfg=cfg)
+        if log: log.info("[SHADOW] try=%d cfg=%s", i+1, cfg)
+        out = estimate_height_from_shadow(poly, img_rgb, transform, raster_crs, cfg=cfg,log=log)
         if out is not None and np.isfinite(out.get("height", None)):
-            logging.info(f"[SHADOW] success try={i+1} height={out['height']:.2f} shadow_len={out['shadow_length_m']:.2f}")
+            if log: log.info(f"[SHADOW] success try={i+1} height={out['height']:.2f} shadow_len={out['shadow_length_m']:.2f}")
             return out
-    logging.info("[SHADOW] all retries failed")
+    if log: log.info("[SHADOW] all retries failed")
     return None
 
 
-def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs, cfg=None):
-    logging.info("Shadow height estimation invoked")
+def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs, cfg=None,log=None):
+    if log: 
+        log.info("Shadow height estimation invoked")
 
     # ---------------- CFG OVERRIDES ----------------
     cfg = cfg or {}
@@ -893,43 +1487,6 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs, cfg=None):
 
                 shadow_mask[y, x] = 1
                 local_len = step
-
-
-            # min_gray = int(gray_s[y0, x0])
-            # bright_count = 0
-
-            # # tuned defaults (good starting point)
-            # DELTA = 8            # was too small; try 6–12
-            # BRIGHT_LIMIT = 6     # allow more bumps before stopping
-            # HARD_THR_PAD = 5     # allow a little above thr before stopping
-
-            # for step in range(1, max_steps):
-            #     x = int(round(x0 + dx * step))
-            #     y = int(round(y0 + dy * step))
-            #     if x < 0 or y < 0 or x >= w or y >= h:
-            #         break
-
-            #     if building_mask[y, x] == 1:
-            #         continue
-
-            #     g = int(gray_s[y, x])
-
-            #     # 1) absolute stop (but allow a small pad)
-            #     # if g > (thr + HARD_THR_PAD):
-            #     #     break
-
-            #     # 2) soft monotonic check (tolerant)
-            #     if g > (min_gray + DELTA):
-            #         bright_count += 1
-            #         if bright_count >= BRIGHT_LIMIT:
-            #             break
-            #     else:
-            #         bright_count = 0
-            #         if g < min_gray:
-            #             min_gray = g
-
-            #     shadow_mask[y, x] = 1
-            #     local_len = step
 
 
             if local_len > 0:
@@ -1115,7 +1672,8 @@ def estimate_height_from_shadow(poly, img_rgb, transform, raster_crs, cfg=None):
         }
 
     except Exception as e:
-        logging.debug("Shadow height estimation failed: %s", e)
+        if log:
+            log.debug("Shadow height estimation failed: %s", e)
         return None
 
 
@@ -1643,57 +2201,57 @@ def is_airport_building(poly, relaxed=False):
     return True
 
 # NOTE: deprecated (kept for reference); main pipeline uses predictor.predict(box=...) on full tile/AOI image.
-def run_sam_on_crop(crop_rgb, full_transform, offset_x, offset_y, yolo_conf):
-    h, w = crop_rgb.shape[:2]
-    predictor.set_image(crop_rgb)
+# def run_sam_on_crop(crop_rgb, full_transform, offset_x, offset_y, yolo_conf):
+#     h, w = crop_rgb.shape[:2]
+#     predictor.set_image(crop_rgb)
 
-    # Box over the whole crop (since crop is already YOLO box)
-    box = np.array([0, 0, w, h], dtype=np.float32)
+#     # Box over the whole crop (since crop is already YOLO box)
+#     box = np.array([0, 0, w, h], dtype=np.float32)
 
-    masks, scores, _ = predictor.predict(
-        box=box,
-        multimask_output=True
-    )
+#     masks, scores, _ = predictor.predict(
+#         box=box,
+#         multimask_output=True
+#     )
 
-    results = []
-    min_area = max(20, int(0.003 * h * w))
+#     results = []
+#     min_area = max(20, int(0.003 * h * w))
 
-    for i, (mask, score) in enumerate(zip(masks, scores)):
-        area = int(mask.sum())
-        if area < min_area:
-            logging.info(f"SAM mask {i} rejected: area {area} < {min_area}")
-            continue
+#     for i, (mask, score) in enumerate(zip(masks, scores)):
+#         area = int(mask.sum())
+#         if area < min_area:
+#             BOOT_LOG.info(f"SAM mask {i} rejected: area {area} < {min_area}")
+#             continue
 
-        poly = mask_to_polygon({"segmentation": mask.astype(np.uint8)}, full_transform, offset_x, offset_y)
-        if poly is None:
-            logging.info(f"SAM mask {i} rejected: polygon None")
-            continue
+#         poly = mask_to_polygon({"segmentation": mask.astype(np.uint8)}, full_transform, offset_x, offset_y)
+#         if poly is None:
+#             BOOT_LOG.info(f"SAM mask {i} rejected: polygon None")
+#             continue
 
-        hull = poly.convex_hull
-        solidity = poly.area / max(hull.area, 1e-6)
-        minx, miny, maxx, maxy = poly.bounds
-        w0 = maxx - minx; h0 = maxy - miny
-        aspect = max(w0, h0) / max(1e-6, min(w0, h0))
+#         hull = poly.convex_hull
+#         solidity = poly.area / max(hull.area, 1e-6)
+#         minx, miny, maxx, maxy = poly.bounds
+#         w0 = maxx - minx; h0 = maxy - miny
+#         aspect = max(w0, h0) / max(1e-6, min(w0, h0))
 
-        if not is_airport_building(poly, relaxed=True):
-            logging.info(f"SAM mask {i} rejected: airport_filter solidity={solidity:.3f} aspect={aspect:.2f}")
-            continue
+#         if not is_airport_building(poly, relaxed=True):
+#             logging.info(f"SAM mask {i} rejected: airport_filter solidity={solidity:.3f} aspect={aspect:.2f}")
+#             continue
 
-        conf = float(0.6 * float(score) + 0.4 * float(yolo_conf))
-        results.append((poly, conf))
+#         conf = float(0.6 * float(score) + 0.4 * float(yolo_conf))
+#         results.append((poly, conf))
 
-    return results
+#     return results
 
 
-def overlaps_any(poly, buildings, thresh=0.3):
-    for item in buildings:
-        if not isinstance(item, (tuple, list)) or len(item) < 1:
-            continue
-        p = item[0]
-        if poly.intersection(p).area / poly.area > thresh:
-            logging.info("OVERLAP DETECTION IN overlaps_any")
-            return True
-    return False
+# def overlaps_any(poly, buildings, thresh=0.3):
+#     for item in buildings:
+#         if not isinstance(item, (tuple, list)) or len(item) < 1:
+#             continue
+#         p = item[0]
+#         if poly.intersection(p).area / poly.area > thresh:
+#             logging.info("OVERLAP DETECTION IN overlaps_any")
+#             return True
+#     return False
 
 
 def split_box_grid(x1, y1, x2, y2, nx=2, ny=2):
@@ -1716,43 +2274,96 @@ def split_box_grid(x1, y1, x2, y2, nx=2, ny=2):
 def crop_transform(full_transform, x_off, y_off):
     return full_transform * Affine.translation(x_off, y_off)
 
-def nms_boxes(boxes, iou_thr=0.5):
-    """
-    boxes: [(x1,y1,x2,y2,conf), ...]
-    returns filtered boxes (same format)
-    """
+# def nms_boxes(boxes, iou_thr=0.5):
+#     """
+#     boxes: [(x1,y1,x2,y2,conf), ...]
+#     returns filtered boxes (same format)
+#     """
+#     if not boxes:
+#         return []
+
+#     boxes = sorted(boxes, key=lambda b: b[4], reverse=True)
+
+#     def iou(a, b):
+#         ax1, ay1, ax2, ay2 = a
+#         bx1, by1, bx2, by2 = b
+#         inter_x1 = max(ax1, bx1)
+#         inter_y1 = max(ay1, by1)
+#         inter_x2 = min(ax2, bx2)
+#         inter_y2 = min(ay2, by2)
+#         iw = max(0, inter_x2 - inter_x1)
+#         ih = max(0, inter_y2 - inter_y1)
+#         inter = iw * ih
+#         area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
+#         area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
+#         union = area_a + area_b - inter
+#         return inter / union if union > 0 else 0.0
+
+#     keep = []
+#     for b in boxes:
+#         bx1, by1, bx2, by2, bc = b
+#         ok = True
+#         for k in keep:
+#             kx1, ky1, kx2, ky2, kc = k
+#             if iou((bx1, by1, bx2, by2), (kx1, ky1, kx2, ky2)) > iou_thr:
+#                 ok = False
+#                 break
+#         if ok:
+#             keep.append(b)
+#     return keep
+
+
+def nms_boxes(boxes, iou_thr=0.55):
     if not boxes:
         return []
-
     boxes = sorted(boxes, key=lambda b: b[4], reverse=True)
 
+    def area(b):
+        return max(0, b[2] - b[0]) * max(0, b[3] - b[1])
+
+    def inter_area(a, b):
+        ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+        ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+        return max(0, ix2 - ix1) * max(0, iy2 - iy1)
+
     def iou(a, b):
-        ax1, ay1, ax2, ay2 = a
-        bx1, by1, bx2, by2 = b
-        inter_x1 = max(ax1, bx1)
-        inter_y1 = max(ay1, by1)
-        inter_x2 = min(ax2, bx2)
-        inter_y2 = min(ay2, by2)
-        iw = max(0, inter_x2 - inter_x1)
-        ih = max(0, inter_y2 - inter_y1)
-        inter = iw * ih
-        area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
-        area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
-        union = area_a + area_b - inter
-        return inter / union if union > 0 else 0.0
+        inter = inter_area(a, b)
+        if inter <= 0:
+            return 0.0
+        ua = area(a) + area(b) - inter
+        return inter / max(1.0, ua)
+
+    # NEW: treat “small mostly inside big” as NOT a duplicate
+    def is_nested_keep(b_big, b_small):
+        a_big = float(area(b_big))
+        a_small = float(area(b_small))
+        if a_small <= 0 or a_big <= 0:
+            return False
+        inter = float(inter_area(b_big, b_small))
+        # small is mostly covered by big, and is substantially smaller
+        cover_small = inter / a_small
+        size_ratio = a_small / a_big
+        return (cover_small >= 0.88) and (size_ratio <= 0.72)
 
     keep = []
-    for b in boxes:
-        bx1, by1, bx2, by2, bc = b
-        ok = True
-        for k in keep:
-            kx1, ky1, kx2, ky2, kc = k
-            if iou((bx1, by1, bx2, by2), (kx1, ky1, kx2, ky2)) > iou_thr:
-                ok = False
-                break
-        if ok:
-            keep.append(b)
+    suppressed = set()
+
+    for i in range(len(boxes)):
+        if i in suppressed:
+            continue
+        keep.append(boxes[i])
+        for j in range(i + 1, len(boxes)):
+            if j in suppressed:
+                continue
+            ov = iou(boxes[i], boxes[j])
+            if ov > iou_thr:
+                # NEW: if j is a smaller roof box inside i, KEEP it
+                if is_nested_keep(boxes[i], boxes[j]):
+                    continue
+                suppressed.add(j)
+
     return keep
+
 
 
 def polygon_rectangularity(poly):
@@ -1883,7 +2494,7 @@ def _ensure_bounds_4326(bounds):
 
     # if numbers look like meters (EPSG:3857), convert to degrees
     if (abs(west) > 180 or abs(east) > 180 or abs(south) > 90 or abs(north) > 90):
-        logging.warning("Bounds look non-4326; converting from EPSG:3857 -> EPSG:4326")
+        BOOT_LOG.warning("Bounds look non-4326; converting from EPSG:3857 -> EPSG:4326")
         west, south, east, north = transform_bounds("EPSG:3857", "EPSG:4326", west, south, east, north)
 
     # ensure order is correct
@@ -1901,1077 +2512,1024 @@ def detect_buildings(bounds):
     bounds = tuple(round(float(b), 7) for b in bounds)
 
     run_id = uuid.uuid4().hex
-    RECALL = {"yolo": 0, "sam_ok": 0, "sam_drop": 0}
-    out_geojson_rel = f"output/buildings_{run_id}.geojson"
-    out_glb_rel     = f"output/aoi_buildings_{run_id}.glb"
-    out_geojson_abs = os.path.join(OUT_DIR, f"buildings_{run_id}.geojson")
-    out_glb_abs     = os.path.join(OUT_DIR, f"aoi_buildings_{run_id}.glb")
+    setup_logging(run_id)
+    log = get_logger(run_id, stage="AOI", det_id="START")
 
-    logging.info(f"AOI bounds (EPSG:4326): {bounds} run_id={run_id}")
+    try:
+
+        RECALL = {"yolo": 0, "sam_ok": 0, "sam_drop": 0}
+        out_geojson_rel = f"output/buildings_{run_id}.geojson"
+        out_glb_rel     = f"output/aoi_buildings_{run_id}.glb"
+        out_geojson_abs = os.path.join(OUT_DIR, f"buildings_{run_id}.geojson")
+        out_glb_abs     = os.path.join(OUT_DIR, f"aoi_buildings_{run_id}.glb")
+
+        log.info(f"AOI bounds (EPSG:4326): {bounds} run_id={run_id}")
+        all_buildings = []
+        sam_buildings = []
+        final_buildings = []
+        aoi_path = f"ml/tmp/aoi_{uuid.uuid4().hex}.tif"
+        transform, raster_crs = extract_aoi(bounds, aoi_path)
+        pixel_size_m = abs(transform.a)
+        log.info(f"AOI transform origin: transform.c =  {transform.c} , transform.f = {transform.f} ")
+
+        with rasterio.open(aoi_path) as src:
+            img = src.read().transpose(1, 2, 0)
+
+        #img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img_rgb = img
+
+        h, w = img_rgb.shape[:2]
+        pixel_area_m2 = abs(transform.a * transform.e)
+        aoi_area_m2 = h * w * pixel_area_m2
+
+        log = log.with_ctx(stage="aoi")  # stage update
+        log.info("AOI image size=%sx%s pixel_size_m=%.4f crs=%s", w, h, abs(transform.a), str(raster_crs))
+        log.info("AOI tif=%s", aoi_path)
+
+        #osm = get_osm_buildings(bounds)
+        osm = None
+        tiles = []
+
+        if aoi_area_m2 > MIN_TILING_AREA_M2:
+            tiles = split_bounds_into_tiles(bounds, TILE_SIZE_M, TILE_OVERLAP)
+            for tile_idx, tb in enumerate(tiles):
+                tile_id = f"T{tile_idx:03d}"
+                tlog = get_logger(run_id, stage="TILE", det_id=tile_id)
+                t_path = f"ml/tmp/aoi_tile_{uuid.uuid4().hex}.tif"
+                t_transform, t_crs = extract_aoi(tb, t_path)
+
+                tlog.info("Tile bounds=%s", tb)
+                tlog.info("Tile tif=%s crs=%s origin=(%.3f,%.3f) px=%.3f",t_path, str(t_crs), t_transform.c, t_transform.f, abs(t_transform.a))
 
 
-    logging.info(f"AOI bounds (EPSG:4326): {bounds}")
-    all_buildings = []
-    sam_buildings = []
-    final_buildings = []
-    aoi_path = f"ml/tmp/aoi_{uuid.uuid4().hex}.tif"
-    transform, raster_crs = extract_aoi(bounds, aoi_path)
-    pixel_size_m = abs(transform.a)
-    logging.info(f"AOI transform origin: transform.c =  {transform.c} , transform.f = {transform.f} ")
+                with rasterio.open(t_path) as src:
+                    tile_img = src.read().transpose(1, 2, 0)
 
-    with rasterio.open(aoi_path) as src:
-        img = src.read().transpose(1, 2, 0)
-
-    #img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img_rgb = img
-
-    h, w = img_rgb.shape[:2]
-    pixel_area_m2 = abs(transform.a * transform.e)
-    aoi_area_m2 = h * w * pixel_area_m2
-
-    #osm = get_osm_buildings(bounds)
-    osm = None
-    tiles = []
-
-    if aoi_area_m2 > MIN_TILING_AREA_M2:
-        tiles = split_bounds_into_tiles(bounds, TILE_SIZE_M, TILE_OVERLAP)
-        for tb in tiles:
-            t_path = f"ml/tmp/aoi_tile_{uuid.uuid4().hex}.tif"
-            t_transform, t_crs = extract_aoi(tb, t_path)
-
-            with rasterio.open(t_path) as src:
-                tile_img = src.read().transpose(1, 2, 0)
-
-            #tile_rgb = cv2.cvtColor(tile_img, cv2.COLOR_BGR2RGB)
-            tile_rgb = tile_img
-            tile_rgb = tile_rgb.astype(np.uint8)
-            predictor.set_image(tile_rgb)   # ONCE per tile
+                #tile_rgb = cv2.cvtColor(tile_img, cv2.COLOR_BGR2RGB)
+                tile_rgb = tile_img
+                tile_rgb = tile_rgb.astype(np.uint8)
+                predictor.set_image(tile_rgb)   # ONCE per tile
 
 
-            # 1) default pass (fast)
-            # yolo_boxes = detect_building_boxes_microtiles(
-            #     tile_rgb,
-            #     tile_size=None,
-            #     overlap=None,
-            #     conf=0.05,
-            #     imgsz=640,
-            #     debug=True,
-            #     debug_tag="tile",
-            #     target_tile_factor=1.5,
-            #     overlap_cap=0.75
-            # )
+                yolo_boxes = detect_building_boxes_ensemble(tile_rgb, debug=True, debug_tag="tile_ens",log=tlog,run_id=run_id)
+                tlog.info("YOLO boxes=%d (pre-nms)", len(yolo_boxes))
 
-            yolo_boxes = detect_building_boxes_ensemble(tile_rgb, debug=True, debug_tag="tile_ens")
+                # 2) gate: if too few boxes, run ensemble as recall booster
+                # if len(yolo_boxes) < 3:
+                #     yolo_boxes = detect_building_boxes_ensemble(tile_rgb, debug=True, debug_tag="tile_ens")
 
-            # 2) gate: if too few boxes, run ensemble as recall booster
-            if len(yolo_boxes) < 3:
-                yolo_boxes = detect_building_boxes_ensemble(tile_rgb, debug=True, debug_tag="tile_ens")
+                tlog.info(f"YOLO Detected {len(yolo_boxes)} boxes (micro-tiles)")
+                RECALL["yolo"] += len(yolo_boxes)
+                yolo_boxes_total += len(yolo_boxes)
 
-            logging.info(f"YOLO Detected {len(yolo_boxes)} boxes (micro-tiles)")
-            RECALL["yolo"] += len(yolo_boxes)
-            yolo_boxes_total += len(yolo_boxes)
+                before = len(yolo_boxes)
+                #yolo_boxes = nms_boxes(yolo_boxes, iou_thr=0.50)
+                yolo_boxes = nms_boxes(yolo_boxes, iou_thr=0.35)
+                yolo_boxes_total_nms += len(yolo_boxes)
 
-            before = len(yolo_boxes)
-            #yolo_boxes = nms_boxes(yolo_boxes, iou_thr=0.50)
-            yolo_boxes = nms_boxes(yolo_boxes, iou_thr=0.35)
-            yolo_boxes_total_nms += len(yolo_boxes)
+                if len(yolo_boxes) != before:
+                    tlog.info(f"[TILE] NMS reduced boxes {before} -> {len(yolo_boxes)}")
+                
 
-            if len(yolo_boxes) != before:
-                logging.info(f"[TILE] NMS reduced boxes {before} -> {len(yolo_boxes)}")
-            
+                DROP = {"min_area": 0, "too_full": 0, "none": 0, "poly_none": 0}
+                PAD = None   # ✅ always defined
+                for box_idx, (x1, y1, x2, y2, yconf) in enumerate(yolo_boxes):
+                    det_id = f"{tile_id}_Y{box_idx:04d}"
+                    dlog = get_logger(run_id, stage="TILE_DET", det_id=det_id)
 
-            DROP = {"min_area": 0, "too_full": 0, "none": 0, "poly_none": 0}
-            for (x1, y1, x2, y2, yconf) in yolo_boxes:
+                    bw = x2 - x1
+                    bh = y2 - y1
+                    tile_h, tile_w = tile_rgb.shape[:2]
 
-                bw = x2 - x1
-                bh = y2 - y1
-                tile_h, tile_w = tile_rgb.shape[:2]
+                    dlog.info(
+                        f"[TILE] YOLO raw: x1={x1}, y1={y1}, x2={x2}, y2={y2}, "
+                        f"w={bw}, h={bh}, conf={yconf:.3f}, tile_w={tile_w}, tile_h={tile_h}"
+                    )
 
-                logging.info(
-                    f"[TILE] YOLO raw: x1={x1}, y1={y1}, x2={x2}, y2={y2}, "
-                    f"w={bw}, h={bh}, conf={yconf:.3f}, tile_w={tile_w}, tile_h={tile_h}"
+
+
+                    #PAD = int(np.clip(0.08 * min(bw, bh), 2, 14))  # 8% of min dim, clamp 2..12
+                    PAD = int(np.clip(0.10 * min(bw, bh), 6, 32))  # was max 14
+                    x1p = max(0, x1 - PAD); y1p = max(0, y1 - PAD)
+                    x2p = min(tile_rgb.shape[1] - 1, x2 + PAD)
+                    y2p = min(tile_rgb.shape[0] - 1, y2 + PAD)
+
+
+                    if is_mega_or_strip_box(x1p, y1p, x2p, y2p, tile_w, tile_h, yconf):
+                        dlog.debug(f"[TILE] Dropped mega/strip box conf={yconf:.3f}")
+                        continue
+
+
+                    pbw = x2p - x1p
+                    pbh = y2p - y1p
+
+                    dlog.debug(
+                        f"[TILE] YOLO padded: x1p={x1p}, y1p={y1p}, x2p={x2p}, y2p={y2p}, "
+                        f"pw={pbw}, ph={pbh}, pad={PAD}"
+                    )
+
+
+                    # If YOLO box is huge, don't drop it (kills recall on container grids).
+                    # Split into sub-boxes and run SAM per sub-box.
+                    huge = is_box_too_big(x1p, y1p, x2p, y2p, tile_w, tile_h, BIG_BOX_FRAC_TILE)
+                    sub_boxes = [(x1p, y1p, x2p, y2p)]
+
+                    if huge:
+                        bw2 = x2p - x1p
+                        bh2 = y2p - y1p
+                        aspect2 = max(bw2 / max(1, bh2), bh2 / max(1, bw2))
+
+                        dlog.warning("[TILE] Huge YOLO box -> splitting")
+                        if aspect2 < 2.0:
+                            # square-ish mega → split as grid (2x2 or 3x3)
+                            # 2x2 is safer; 3x3 increases recall but adds compute
+                            sub_boxes = split_box_grid(x1p, y1p, x2p, y2p, nx=2, ny=2)
+                        else:
+                            # long mega → split along long axis
+                            sub_boxes = split_box_long_axis(x1p, y1p, x2p, y2p, max_splits=3)
+
+
+                    raw_area = max(0, bw) * max(0, bh)
+                    pad_area = max(0, pbw) * max(0, pbh)
+                    tile_area = tile_w * tile_h
+
+                    if pad_area / max(tile_area, 1) > 0.35:
+                        dlog.warning(f"[TILE] Very large padded box vs tile: {pad_area/tile_area:.2f}")
+
+                    dlog.info(
+                        f"[TILE] box_area raw={raw_area}, padded={pad_area}, "
+                        f"padded/tile={pad_area/max(tile_area,1):.3f}"
+                    )
+
+                    
+
+                    for sub_idx, (sx1, sy1, sx2, sy2) in enumerate(sub_boxes):
+                        sub_det_id = f"{det_id}_S{sub_idx:02d}"
+                        slog = get_logger(run_id, stage="SAM", det_id=sub_det_id)
+
+                        sbw = sx2 - sx1
+                        sbh = sy2 - sy1
+                        sbox_area = max(1, sbw * sbh)
+
+                        sbox = np.array([sx1, sy1, sx2, sy2], dtype=np.float32)
+
+                        mask, mscore, dbg = predict_mask_multi_prompt(
+                            predictor,
+                            yolo_box_xyxy=(sx1, sy1, sx2, sy2),
+                            yolo_conf=yconf,
+                            scales=(1.00, 1.15, 1.28, 1.40),
+                            shift_frac=0.03,
+                            max_union=2
+                        )
+
+                        _save_sam_debug(
+                            run_id=run_id,
+                            det_id=sub_det_id,
+                            stage_tag="tile_raw",
+                            img_rgb_uint8=tile_rgb,
+                            box_xyxy=(sx1, sy1, sx2, sy2),
+                            mask_bool=mask,
+                            score=mscore,
+                            dbg=dbg,
+                             log=slog,
+                        )
+
+                        if mask is None:
+                            DROP["none"] += 1
+                            RECALL["sam_drop"] += 1
+                            continue
+
+                        RECALL["sam_ok"] += 1
+
+                        best = mask.astype(np.uint8)
+                        best_score = float(mscore)
+
+                        # For clipping, use dbg["best_prompt_box"] as reference
+                        #ex1, ey1, ex2, ey2 = dbg["best_prompt_box"]
+
+                        if not isinstance(dbg, dict) or "best_prompt_box" not in dbg:
+                            ex1, ey1, ex2, ey2 = sx1, sy1, sx2, sy2  # (or x1p,y1p,x2p,y2p in AOI branch)
+                        else:
+                            ex1, ey1, ex2, ey2 = dbg["best_prompt_box"]
+
+                        # ✅ FIX 1: remove union_mask (undefined)
+                        best_preclip = best.copy()
+                        best_area = int(best.sum())
+
+                        # ✅ FIX 2: use sub-box area (not x2p/x1p from outer box)
+                        box_area = max(1, (sx2 - sx1) * (sy2 - sy1))
+                        min_area = max(20, int(0.002 * box_area))
+
+                        # --- loose clip around EXPANDED box ---
+                        MIN_PAD_PX = 16
+                        MAX_PAD_PX = 96
+                        CLIP_EXTRA_PX = 16
+
+                        sbw = sx2 - sx1
+                        sbh = sy2 - sy1
+                        pad = int(0.10 * min(sbw, sbh))
+                        pad = max(MIN_PAD_PX, min(MAX_PAD_PX, pad))
+
+                        tile_h, tile_w = tile_rgb.shape[:2]
+                        x1c = max(0, int(ex1 - pad - CLIP_EXTRA_PX))
+                        y1c = max(0, int(ey1 - pad - CLIP_EXTRA_PX))
+                        x2c = min(tile_w - 1, int(ex2 + pad + CLIP_EXTRA_PX))
+                        y2c = min(tile_h - 1, int(ey2 + pad + CLIP_EXTRA_PX))
+
+                        mask_clip = np.zeros_like(best, dtype=np.uint8)
+                        mask_clip[y1c:y2c+1, x1c:x2c+1] = 1
+
+                        best = best & mask_clip
+                        best_clipped_area = int(best.sum())
+
+                        _save_sam_debug(
+                            run_id=run_id,
+                            det_id=sub_det_id,
+                            stage_tag="tile_final",
+                            img_rgb_uint8=tile_rgb,
+                            box_xyxy=(sx1, sy1, sx2, sy2),
+                            mask_bool=(best.astype(bool) if best is not None else None),
+                            score=best_score,
+                            dbg={"after_clip": True, **(dbg or {})},
+                            log=slog
+                        )
+
+                        # 🔒 area-loss guard
+                        if best_clipped_area < 0.85 * best_area:
+                            best = best_preclip
+                            best_clipped_area = best_area
+
+                        if best_clipped_area < min_area:
+                            DROP["min_area"] += 1
+                            continue
+
+                        poly = mask_to_polygon({"segmentation": best}, t_transform)
+                        if poly is None:
+                            DROP["poly_none"] += 1
+                            continue
+
+
+                        #final_conf = 0.6 * best_score + 0.4 * yconf
+                        # use YOLO conf as primary; SAM score as a mild modifier
+                        final_conf = float(np.clip(0.85 * yconf + 0.15 * max(0.0, min(1.0, best_score)), 0.0, 1.0))
+                        all_buildings.append((poly, DEFAULT_HEIGHT, final_conf))
+
+
+                        # if not is_airport_building(poly, relaxed=True):
+                        #     continue
+
+                # ✅ put this here: end of ONE TILE
+                tlog.info(
+                    f"[TILE DROP] tb={tb} boxes={len(yolo_boxes)} "
+                    f"min_area={DROP['min_area']} too_full={DROP['too_full']} "
+                    f"none={DROP['none']} poly_none={DROP['poly_none']}"
                 )
 
 
 
-                #PAD = int(np.clip(0.08 * min(bw, bh), 2, 14))  # 8% of min dim, clamp 2..12
-                PAD = int(np.clip(0.10 * min(bw, bh), 6, 32))  # was max 14
-                x1p = max(0, x1 - PAD); y1p = max(0, y1 - PAD)
-                x2p = min(tile_rgb.shape[1] - 1, x2 + PAD)
-                y2p = min(tile_rgb.shape[0] - 1, y2 + PAD)
+
+        else:
+            img_rgb = img_rgb.astype(np.uint8)
+            predictor.set_image(img_rgb)
+            #yolo_boxes = detect_building_boxes(img_rgb)
+            yolo_boxes = detect_building_boxes_ensemble(img_rgb, debug=True, debug_tag="aoi_ens",log=log,run_id=run_id)
+            orig_yolo_boxes = list(yolo_boxes)
+            yolo_boxes_total += len(yolo_boxes)
+
+            # --- BIG BOX / TINY AOI fallback trigger
+            H, W = img_rgb.shape[:2]
+            q = [0, 0, 0, 0]
+            if yolo_boxes:
+                # compute largest box fraction
+                max_frac = 0.0
+                for (x1, y1, x2, y2, yconf) in yolo_boxes:
+                    cx = 0.5 * (x1 + x2)
+                    cy = 0.5 * (y1 + y2)
+                    idx = (0 if cy < H / 2 else 2) + (0 if cx < W / 2 else 1)
+                    q[idx] += 1
+
+                log.info(f"[AOI] YOLO quadrant counts TL/TR/BL/BR={q}")
+
+                if min(q) == 0:
+                    log.info("[AOI] Sparse quadrant -> running ensemble recall booster")
+                    yolo_boxes = detect_building_boxes_ensemble(
+                        img_rgb,
+                        debug=True,
+                        debug_tag="aoi_ens_boost",
+                        log=log,
+                        run_id=run_id,
+                    )
 
 
-                if is_mega_or_strip_box(x1p, y1p, x2p, y2p, tile_w, tile_h, yconf):
-                    logging.warning(f"[TILE] Dropped mega/strip box conf={yconf:.3f}")
+                max_conf = max([c for *_, c in yolo_boxes]) if yolo_boxes else 0.0
+                # --- BIG BOX / TINY AOI fallback trigger (FIXED)
+                H, W = img_rgb.shape[:2]
+                suspicious = False
+
+                if not yolo_boxes:
+                    suspicious = True
+                else:
+                    max_frac = 0.0
+                    max_conf = 0.0
+                    for (x1, y1, x2, y2, yconf) in yolo_boxes:
+                        
+                        frac = ((x2 - x1) * (y2 - y1)) / max(1, W * H)
+                        max_frac = max(max_frac, frac)
+                        max_conf = max(max_conf, float(yconf))
+
+                    # --- Special case: single giant YOLO box => box prompt is useless for SAM
+                    handled_giant = False
+                    if len(yolo_boxes) == 1:
+                        x1,y1,x2,y2,yconf = yolo_boxes[0]
+                        box_frac = ((x2-x1)*(y2-y1)) / max(1, W*H)
+
+                        # If AOI is tiny, DON'T trust this shortcut; force microtile fallback instead
+                        if min(H, W) < MIN_AOI_FOR_DIRECT_YOLO:
+                            suspicious = True
+                        else:
+                            if box_frac > 0.85 and yconf > 0.95:
+                                sam_cands = run_sam_on_image(img_rgb, transform, max_aoi_ratio=0.60)
+                                cand = [(p, c) for (p, _, c) in sam_cands]
+                                best_poly = pick_best_building(cand, aoi_bounds=aoi_bounds_from_transform(transform, H, W))
+                                if best_poly is not None:
+                                    all_buildings.append((best_poly, DEFAULT_HEIGHT, 0.90))
+                                    handled_giant = True
+
+
+                    if handled_giant:
+                        yolo_boxes = []   # ensures the later for-loop is skipped
+
+                    else:
+
+                        # Case A: multiple boxes + one huge box + not extremely confident
+                        if (len(yolo_boxes) >= 2) and (max_frac > BIG_BOX_FRAC_AOI) and (max_conf < 0.95):
+                            suspicious = True
+
+                        # Case B: tiny AOI — fallback only if YOLO is not clearly confident/correct
+                        if (min(H, W) < MIN_AOI_FOR_DIRECT_YOLO):
+                            if len(yolo_boxes) >= 2:
+                                suspicious = True
+                            elif (max_frac > 0.90) and (max_conf < 0.98):
+                                suspicious = True
+
+                        if suspicious:
+                            log.warning(
+                                f"[AOI] YOLO suspicious (boxes={len(yolo_boxes)}, max_box_frac={max_frac:.3f}, "
+                                f"max_conf={max_conf:.3f}, size={W}x{H}) -> using microtile fallback"
+                            )
+
+                            # ---- Fallback: upscale AOI then microtile YOLO on it
+                            scale = UPSCALE_FOR_FALLBACK
+                            up = cv2.resize(img_rgb, (W * scale, H * scale), interpolation=cv2.INTER_CUBIC)
+
+                            fb_boxes = detect_building_boxes_microtiles(
+                                up,
+                                tile_size=None,
+                                overlap=None,
+                                conf=0.05,
+                                imgsz=640,
+                                run_id=run_id,
+                                log=log,
+                                debug=True,
+                                debug_tag="aoi_microtiles_fallback"
+                            )
+
+                            # scale fallback boxes back down to original AOI coords
+                            yolo_boxes = []
+                            for (x1, y1, x2, y2, yconf) in fb_boxes:
+                                x1 = int(x1 / scale); y1 = int(y1 / scale)
+                                x2 = int(x2 / scale); y2 = int(y2 / scale)
+                                x1 = max(0, min(x1, W - 1)); x2 = max(0, min(x2, W - 1))
+                                y1 = max(0, min(y1, H - 1)); y2 = max(0, min(y2, H - 1))
+                                if x2 > x1 and y2 > y1:
+                                    yolo_boxes.append((x1, y1, x2, y2, yconf))
+
+                            log.info(f"[AOI] fallback microtile boxes={len(yolo_boxes)}")
+                            if not yolo_boxes:
+                                log.warning("[AOI] fallback microtiles returned 0 → keeping original YOLO boxes")
+                                yolo_boxes = orig_yolo_boxes
+
+            log.info(f"YOLO Detected {len(yolo_boxes)} boxes")
+
+            before0 = len(yolo_boxes)
+
+            # 1) Drop container-like boxes BEFORE NMS (critical)
+            yolo_boxes = drop_container_boxes(yolo_boxes, W, H, conf_margin=0.06)
+
+            if len(yolo_boxes) != before0:
+                log.info(f"[AOI] Dropped container boxes {before0} -> {len(yolo_boxes)}")
+
+            before1 = len(yolo_boxes)
+            yolo_boxes = nms_boxes(yolo_boxes, iou_thr=0.45)
+
+            if len(yolo_boxes) != before1:
+                log.info(f"[AOI] NMS reduced boxes {before1} -> {len(yolo_boxes)}")
+
+            RECALL["yolo"] += len(yolo_boxes)
+
+            yolo_boxes_total_nms += len(yolo_boxes)
+            if len(yolo_boxes) != before:
+                log.info(f"[AOI] NMS reduced boxes {before} -> {len(yolo_boxes)}")
+
+            for box_idx, (x1, y1, x2, y2, yconf) in enumerate(yolo_boxes):
+
+                det_id = f"AOI_Y{box_idx:04d}"
+                dlog = get_logger(run_id, stage="AOI_DET", det_id=det_id)
+
+                bw = x2 - x1
+                bh = y2 - y1
+                H, W = img_rgb.shape[:2]
+
+                dlog.debug(
+                    f"[AOI] YOLO raw: x1={x1}, y1={y1}, x2={x2}, y2={y2}, "
+                    f"w={bw}, h={bh}, conf={yconf:.3f}, aoi_w={W}, aoi_h={H}"
+                )
+
+
+                box_frac = (bw * bh) / max(1, W * H)
+                # if box_frac > 0.5:
+                #     PAD = 0
+                # else:
+                #     #PAD = int(np.clip(0.08 * min(bw, bh), 2, 12))
+                #     #PAD = int(np.clip(0.10 * min(bw, bh), 6, 28))
+                #     PAD = int(np.clip(0.18 * min(bw, bh), 8, 40))
+
+                pad_short = int(np.clip(0.18 * min(bw, bh), 8, 40))
+                pad_long  = int(np.clip(0.08 * max(bw, bh), 8, 70))
+                PAD = None   # ✅ always defined
+
+                if bw >= bh:
+                    padx, pady = pad_long, pad_short   # long horizontal roof → expand more on X
+                else:
+                    padx, pady = pad_short, pad_long   # long vertical roof → expand more on Y
+
+                x1p = max(0, x1 - padx)
+                x2p = min(W, x2 + padx)
+                y1p = max(0, y1 - pady)
+                y2p = min(H, y2 + pady)
+                # x1p = max(0, x1 - PAD)
+                # y1p = max(0, y1 - PAD)
+                # x2p = min(img_rgb.shape[1] - 1, x2 + PAD)
+                # y2p = min(img_rgb.shape[0] - 1, y2 + PAD)
+
+                # ✅ Mega/strip drop for AOI
+                if is_mega_or_strip_box_aoi(x1p, y1p, x2p, y2p, W, H, yconf):
+                    dlog.warning(f"[AOI] Dropped mega/strip box conf={yconf:.3f}")
                     continue
+
+                if len(yolo_boxes) > 1 and is_box_too_big(x1p, y1p, x2p, y2p, W, H, BIG_BOX_FRAC_AOI):
+                    dlog.warning(f"[AOI] Rejecting huge YOLO padded box frac>{BIG_BOX_FRAC_AOI}")
+                    continue
+
 
 
                 pbw = x2p - x1p
                 pbh = y2p - y1p
 
-                logging.info(
-                    f"[TILE] YOLO padded: x1p={x1p}, y1p={y1p}, x2p={x2p}, y2p={y2p}, "
+                dlog.info(
+                    f"[AOI] YOLO padded: x1p={x1p}, y1p={y1p}, x2p={x2p}, y2p={y2p}, "
                     f"pw={pbw}, ph={pbh}, pad={PAD}"
                 )
 
 
-                # If YOLO box is huge, don't drop it (kills recall on container grids).
-                # Split into sub-boxes and run SAM per sub-box.
-                huge = is_box_too_big(x1p, y1p, x2p, y2p, tile_w, tile_h, BIG_BOX_FRAC_TILE)
-                sub_boxes = [(x1p, y1p, x2p, y2p)]
-
-                if huge:
-                    bw2 = x2p - x1p
-                    bh2 = y2p - y1p
-                    aspect2 = max(bw2 / max(1, bh2), bh2 / max(1, bw2))
-
-                    logging.warning("[TILE] Huge YOLO box -> splitting")
-                    if aspect2 < 2.0:
-                        # square-ish mega → split as grid (2x2 or 3x3)
-                        # 2x2 is safer; 3x3 increases recall but adds compute
-                        sub_boxes = split_box_grid(x1p, y1p, x2p, y2p, nx=2, ny=2)
-                    else:
-                        # long mega → split along long axis
-                        sub_boxes = split_box_long_axis(x1p, y1p, x2p, y2p, max_splits=3)
-
-
                 raw_area = max(0, bw) * max(0, bh)
                 pad_area = max(0, pbw) * max(0, pbh)
-                tile_area = tile_w * tile_h
+                aoi_area = W * H
 
-                if pad_area / max(tile_area, 1) > 0.35:
-                    logging.warning(f"[TILE] Very large padded box vs tile: {pad_area/tile_area:.2f}")
-
-                logging.info(
-                    f"[TILE] box_area raw={raw_area}, padded={pad_area}, "
-                    f"padded/tile={pad_area/max(tile_area,1):.3f}"
+                dlog.info(
+                    f"[AOI] box_area raw={raw_area}, padded={pad_area}, "
+                    f"padded/aoi={pad_area/max(aoi_area,1):.3f}"
                 )
 
-                
+                # also ensure valid
+                if x2p <= x1p + 2 or y2p <= y1p + 2:
+                    dlog.warning(f"Skipping invalid padded box [NON TILED ELSE BRANCH]: ({x1p},{y1p})-({x2p},{y2p})")
+                    continue
 
-                for (sx1, sy1, sx2, sy2) in sub_boxes:
+                box = np.array([x1p, y1p, x2p, y2p], dtype=np.float32)
 
-                    sbw = sx2 - sx1
-                    sbh = sy2 - sy1
-                    sbox_area = max(1, sbw * sbh)
+                mask, mscore, dbg = predict_mask_multi_prompt(
+                    predictor,
+                    yolo_box_xyxy=(x1p, y1p, x2p, y2p),
+                    yolo_conf=yconf,
+                    scales=(1.00, 1.15, 1.28, 1.40),
+                    shift_frac=0.03,
+                    max_union=2
+                )
 
-                    sbox = np.array([sx1, sy1, sx2, sy2], dtype=np.float32)
+                # --- Compute min area in pixels from m² threshold ---
+                px_w = abs(transform.a)
+                px_h = abs(transform.e)   # usually negative in north-up rasters
+                px_area_m2 = max(1e-9, px_w * px_h)
 
-                    # masks, scores, _ = predictor.predict(
-                    #     box=sbox,
-                    #     multimask_output=True
-                    # )
+                min_area_px_from_m2 = int(MIN_MASK_AREA_M2 / px_area_m2)
+                min_area_px_from_m2 = max(20, min_area_px_from_m2)  # hard floor
 
-                    # min_area = max(20, int(0.002 * sbox_area))
-                    # max_fill = adaptive_max_fill(sbox_area, sbw, sbh, yconf)
-
-                    # best = None
-                    # best_score = -1.0
-
-                    # for m, s in zip(masks, scores):
-                    #     area = int(m.sum())
-                    #     fill_ratio = area / sbox_area
-
-                    #     if area < min_area:
-                    #         DROP["min_area"] += 1
-                    #         continue
-
-                    #     # if fill_ratio > max_fill and not (yconf >= 0.80 and float(s) >= 0.85):
-                    #     #     continue
-
-                    #     if fill_ratio > max_fill + 0.03 and not (yconf >= 0.75):
-                    #         DROP["too_full"] += 1
-                    #         continue
-
-                    #     if s > best_score:
-                    #         best = m
-                    #         best_score = float(s)
-
-                    # if best is None:
-                    #     DROP["none"] += 1
-                    #     RECALL["sam_drop"] += 1
-                    #     continue
-
-                    # RECALL["sam_ok"] += 1
+                # --- Early reject / retry ---
+                if mask is None:
+                    RECALL["sam_drop"] += 1
+                else:
+                    # If low fill, retry with a larger prompt (helps long roofs)
+                    if isinstance(dbg, dict) and dbg.get("best_fill", 1.0) < 0.45:
+                        rx1, ry1, rx2, ry2 = x1p, y1p, x2p, y2p  # keep padded base
+                        mask2, mscore2, dbg2 = predict_mask_multi_prompt(
+                            predictor,
+                            yolo_box_xyxy=(rx1, ry1, rx2, ry2),
+                            yolo_conf=yconf,
+                            scales=(1.15, 1.30, 1.45, 1.60, 1.75),
+                            shift_frac=0.03,
+                            max_union=3
+                        )
+                        if mask2 is not None and int(mask2.sum()) > int(mask.sum()) * 1.08:
+                            mask, mscore, dbg = mask2, mscore2, dbg2
 
 
-                    # # --- clip SAM mask to sub-box (LOOSER, with minimum context)
-                    # best = best.astype(np.uint8)
 
-                    # MIN_PAD_PX = 16          # <-- key: never allow tiny padding
-                    # MAX_PAD_PX = 64
-                    # CLIP_EXTRA_PX = 12       # <-- extra margin only for clipping (prevents chopping corners)
+                _save_sam_debug(
+                    run_id=run_id,
+                    det_id=det_id,
+                    stage_tag="aoi_raw",
+                    img_rgb_uint8=img_rgb,
+                    box_xyxy=(x1p, y1p, x2p, y2p),
+                    mask_bool=mask,
+                    score=mscore,
+                    dbg=dbg,
+                    log=dlog
+                )
 
-                    # pad = int(0.08 * min(sbw, sbh))
-                    # pad = max(MIN_PAD_PX, min(MAX_PAD_PX, pad))
-
-                    # # prompt box is (sx1..sx2); clip box is slightly larger than prompt+pad
-                    # x1c = max(0, int(sx1 - pad - CLIP_EXTRA_PX))
-                    # y1c = max(0, int(sy1 - pad - CLIP_EXTRA_PX))
-                    # x2c = min(best.shape[1]-1, int(sx2 + pad + CLIP_EXTRA_PX))
-                    # y2c = min(best.shape[0]-1, int(sy2 + pad + CLIP_EXTRA_PX))
-
-                    # mask_clip = np.zeros_like(best, dtype=np.uint8)
-                    # mask_clip[y1c:y2c+1, x1c:x2c+1] = 1
-                    
-
-                    # best_preclip = best.copy()
-                    # best_area = int(best.sum())
-
-                    # best = best & mask_clip
-                    # best_clipped_area = int(best.sum())
-
-                    # # 🔒 one-line area-loss guard (prevents chopping container roofs)
-                    # if best_clipped_area < 0.85 * best_area:
-                    #     best = best_preclip
-                    #     best_clipped_area = best_area
-
-                    # if best_clipped_area < min_area:
-                    #     continue
-
-                    # poly = mask_to_polygon(
-                    #     {"segmentation": best},
-                    #     t_transform
-                    # )
-
-                    union_mask, best_score, min_area, (ex1, ey1, ex2, ey2) = predict_mask_twopass_union(
-                        predictor,
-                        sx1, sy1, sx2, sy2,
-                        yconf=yconf,
-                        expand_scale=1.28   # 1.20–1.35 is typical; 1.28 is a good start for roofs
+                if mask is None:
+                    dlog.info(
+                        f"[AOI] SAM: multi-prompt returned None (box_area={(x2p-x1p)*(y2p-y1p)}, yconf={yconf:.3f})"
                     )
-
-                    if union_mask is None:
-                        DROP["none"] += 1
-                        RECALL["sam_drop"] += 1
-                        continue
-
+                    sam_polys = []
+                    RECALL["sam_drop"] += 1
+                else:
                     RECALL["sam_ok"] += 1
 
-                    best_preclip = union_mask.copy()
-                    best_area = int(union_mask.sum())
+                    best = mask.astype(np.uint8)
+                    best_score = float(mscore)
 
-                    # --- loose clip around EXPANDED box (not the tight one)
+                    best_preclip = best.copy()
+                    best_area = int(best.sum())
+
+                    # Use the winning prompt box from dbg for clipping reference
+                    #ex1, ey1, ex2, ey2 = dbg["best_prompt_box"]
+
+                    if not isinstance(dbg, dict) or "best_prompt_box" not in dbg:
+                        ex1, ey1, ex2, ey2 = x1p, y1p, x2p, y2p  # (or x1p,y1p,x2p,y2p in AOI branch)
+                    else:
+                        ex1, ey1, ex2, ey2 = dbg["best_prompt_box"]
+
+                    box_area = max(1, (x2p - x1p) * (y2p - y1p))
+                    min_area = max(20, int(0.002 * box_area))
+
+                    # --- Clip around "best prompt box" (loose), with area-loss guard ---
                     MIN_PAD_PX = 16
-                    MAX_PAD_PX = 96          # allow a bit more now
+                    MAX_PAD_PX = 96
                     CLIP_EXTRA_PX = 16
 
-                    sbw = sx2 - sx1
-                    sbh = sy2 - sy1
-                    pad = int(0.10 * min(sbw, sbh))
+                    bw = x2p - x1p
+                    bh = y2p - y1p
+                    pad = int(0.10 * min(bw, bh))
                     pad = max(MIN_PAD_PX, min(MAX_PAD_PX, pad))
 
-                    tile_h, tile_w = tile_rgb.shape[:2]
+                    H, W = img_rgb.shape[:2]
                     x1c = max(0, int(ex1 - pad - CLIP_EXTRA_PX))
                     y1c = max(0, int(ey1 - pad - CLIP_EXTRA_PX))
-                    x2c = min(tile_w - 1, int(ex2 + pad + CLIP_EXTRA_PX))
-                    y2c = min(tile_h - 1, int(ey2 + pad + CLIP_EXTRA_PX))
+                    x2c = min(W - 1, int(ex2 + pad + CLIP_EXTRA_PX))
+                    y2c = min(H - 1, int(ey2 + pad + CLIP_EXTRA_PX))
 
-                    mask_clip = np.zeros_like(union_mask, dtype=np.uint8)
-                    mask_clip[y1c:y2c+1, x1c:x2c+1] = 1
+                    box_mask = np.zeros(best.shape, dtype=np.uint8)
+                    box_mask[y1c:y2c+1, x1c:x2c+1] = 1
 
-                    best = union_mask & mask_clip
+                    best = best & box_mask
                     best_clipped_area = int(best.sum())
+
+                    _save_sam_debug(
+                        run_id=run_id,
+                        det_id=det_id,
+                        stage_tag="aoi_final",
+                        img_rgb_uint8=img_rgb,
+                        box_xyxy=(x1p, y1p, x2p, y2p),
+                        mask_bool=(best.astype(bool) if best is not None else None),
+                        score=best_score,
+                        dbg={"after_clip": True, **(dbg or {})},
+                        log=dlog,
+                    )
 
                     # 🔒 area-loss guard
                     if best_clipped_area < 0.85 * best_area:
                         best = best_preclip
                         best_clipped_area = best_area
 
-
-                    box_area = max(1, (x2p - x1p) * (y2p - y1p))
-
-                    if best_clipped_area < min_area:
-                        DROP["min_area"] += 1
-                        continue
-
-                    poly = mask_to_polygon({"segmentation": best}, t_transform)
-                    if poly is None:
-                        DROP["poly_none"] += 1
-                        continue
-
-                    final_conf = 0.6 * best_score + 0.4 * yconf
-                    all_buildings.append((poly, DEFAULT_HEIGHT, final_conf))
-
-
-                    # if not is_airport_building(poly, relaxed=True):
-                    #     continue
-
-            # ✅ put this here: end of ONE TILE
-            logging.info(
-                f"[TILE DROP] tb={tb} boxes={len(yolo_boxes)} "
-                f"min_area={DROP['min_area']} too_full={DROP['too_full']} "
-                f"none={DROP['none']} poly_none={DROP['poly_none']}"
-            )
-
-
-
-
-    else:
-        img_rgb = img_rgb.astype(np.uint8)
-        predictor.set_image(img_rgb)
-        #yolo_boxes = detect_building_boxes(img_rgb)
-        yolo_boxes = detect_building_boxes_ensemble(img_rgb, debug=True, debug_tag="aoi_ens")
-        orig_yolo_boxes = list(yolo_boxes)
-        yolo_boxes_total += len(yolo_boxes)
-
-        # --- BIG BOX / TINY AOI fallback trigger
-        H, W = img_rgb.shape[:2]
-        q = [0, 0, 0, 0]
-        if yolo_boxes:
-            # compute largest box fraction
-            max_frac = 0.0
-            for (x1, y1, x2, y2, yconf) in yolo_boxes:
-                cx = 0.5 * (x1 + x2)
-                cy = 0.5 * (y1 + y2)
-                idx = (0 if cy < H / 2 else 2) + (0 if cx < W / 2 else 1)
-                q[idx] += 1
-
-            logging.info(f"[AOI] YOLO quadrant counts TL/TR/BL/BR={q}")
-
-            if min(q) == 0:
-                logging.info("[AOI] Sparse quadrant -> running ensemble recall booster")
-                yolo_boxes = detect_building_boxes_ensemble(img_rgb, debug=True, debug_tag="aoi_ens_boost")
-
-
-            max_conf = max([c for *_, c in yolo_boxes]) if yolo_boxes else 0.0
-            # --- BIG BOX / TINY AOI fallback trigger (FIXED)
-            H, W = img_rgb.shape[:2]
-            suspicious = False
-
-            if not yolo_boxes:
-                suspicious = True
-            else:
-                max_frac = 0.0
-                max_conf = 0.0
-                for (x1, y1, x2, y2, yconf) in yolo_boxes:
-                    
-                    frac = ((x2 - x1) * (y2 - y1)) / max(1, W * H)
-                    max_frac = max(max_frac, frac)
-                    max_conf = max(max_conf, float(yconf))
-
-                # --- Special case: single giant YOLO box => box prompt is useless for SAM
-                handled_giant = False
-                if len(yolo_boxes) == 1:
-                    x1,y1,x2,y2,yconf = yolo_boxes[0]
-                    box_frac = ((x2-x1)*(y2-y1)) / max(1, W*H)
-
-                    # If AOI is tiny, DON'T trust this shortcut; force microtile fallback instead
-                    if min(H, W) < MIN_AOI_FOR_DIRECT_YOLO:
-                        suspicious = True
-                    else:
-                        if box_frac > 0.85 and yconf > 0.95:
-                            sam_cands = run_sam_on_image(img_rgb, transform, max_aoi_ratio=0.60)
-                            cand = [(p, c) for (p, _, c) in sam_cands]
-                            best_poly = pick_best_building(cand, aoi_bounds=aoi_bounds_from_transform(transform, H, W))
-                            if best_poly is not None:
-                                all_buildings.append((best_poly, DEFAULT_HEIGHT, 0.90))
-                                handled_giant = True
-
-
-                if handled_giant:
-                    yolo_boxes = []   # ensures the later for-loop is skipped
-
-                else:
-
-                    # Case A: multiple boxes + one huge box + not extremely confident
-                    if (len(yolo_boxes) >= 2) and (max_frac > BIG_BOX_FRAC_AOI) and (max_conf < 0.95):
-                        suspicious = True
-
-                    # Case B: tiny AOI — fallback only if YOLO is not clearly confident/correct
-                    if (min(H, W) < MIN_AOI_FOR_DIRECT_YOLO):
-                        if len(yolo_boxes) >= 2:
-                            suspicious = True
-                        elif (max_frac > 0.90) and (max_conf < 0.98):
-                            suspicious = True
-
-                    if suspicious:
-                        logging.warning(
-                            f"[AOI] YOLO suspicious (boxes={len(yolo_boxes)}, max_box_frac={max_frac:.3f}, "
-                            f"max_conf={max_conf:.3f}, size={W}x{H}) -> using microtile fallback"
-                        )
-
-                        # ---- Fallback: upscale AOI then microtile YOLO on it
-                        scale = UPSCALE_FOR_FALLBACK
-                        up = cv2.resize(img_rgb, (W * scale, H * scale), interpolation=cv2.INTER_CUBIC)
-
-                        fb_boxes = detect_building_boxes_microtiles(
-                            up,
-                            tile_size=None,
-                            overlap=None,
-                            conf=0.05,
-                            imgsz=640
-                        )
-
-                        # scale fallback boxes back down to original AOI coords
-                        yolo_boxes = []
-                        for (x1, y1, x2, y2, yconf) in fb_boxes:
-                            x1 = int(x1 / scale); y1 = int(y1 / scale)
-                            x2 = int(x2 / scale); y2 = int(y2 / scale)
-                            x1 = max(0, min(x1, W - 1)); x2 = max(0, min(x2, W - 1))
-                            y1 = max(0, min(y1, H - 1)); y2 = max(0, min(y2, H - 1))
-                            if x2 > x1 and y2 > y1:
-                                yolo_boxes.append((x1, y1, x2, y2, yconf))
-
-                        logging.info(f"[AOI] fallback microtile boxes={len(yolo_boxes)}")
-                        if not yolo_boxes:
-                            logging.warning("[AOI] fallback microtiles returned 0 → keeping original YOLO boxes")
-                            yolo_boxes = orig_yolo_boxes
-
-        logging.info(f"YOLO Detected {len(yolo_boxes)} boxes")
-
-        before = len(yolo_boxes)
-        #yolo_boxes = nms_boxes(yolo_boxes, iou_thr=0.50)
-        yolo_boxes = nms_boxes(yolo_boxes, iou_thr=0.45)
-
-        RECALL["yolo"] += len(yolo_boxes)
-
-        yolo_boxes_total_nms += len(yolo_boxes)
-        if len(yolo_boxes) != before:
-            logging.info(f"[AOI] NMS reduced boxes {before} -> {len(yolo_boxes)}")
-
-        for (x1, y1, x2, y2, yconf) in yolo_boxes:
-
-            bw = x2 - x1
-            bh = y2 - y1
-            H, W = img_rgb.shape[:2]
-
-            logging.info(
-                f"[AOI] YOLO raw: x1={x1}, y1={y1}, x2={x2}, y2={y2}, "
-                f"w={bw}, h={bh}, conf={yconf:.3f}, aoi_w={W}, aoi_h={H}"
-            )
-
-
-            box_frac = (bw * bh) / max(1, W * H)
-            if box_frac > 0.5:
-                PAD = 0
-            else:
-                #PAD = int(np.clip(0.08 * min(bw, bh), 2, 12))
-                PAD = int(np.clip(0.10 * min(bw, bh), 6, 28))
-            x1p = max(0, x1 - PAD)
-            y1p = max(0, y1 - PAD)
-            x2p = min(img_rgb.shape[1] - 1, x2 + PAD)
-            y2p = min(img_rgb.shape[0] - 1, y2 + PAD)
-
-            # ✅ Mega/strip drop for AOI
-            if is_mega_or_strip_box_aoi(x1p, y1p, x2p, y2p, W, H, yconf):
-                logging.warning(f"[AOI] Dropped mega/strip box conf={yconf:.3f}")
-                continue
-
-            if len(yolo_boxes) > 1 and is_box_too_big(x1p, y1p, x2p, y2p, W, H, BIG_BOX_FRAC_AOI):
-                logging.warning(f"[AOI] Rejecting huge YOLO padded box frac>{BIG_BOX_FRAC_AOI}")
-                continue
-
-
-
-            pbw = x2p - x1p
-            pbh = y2p - y1p
-
-            logging.info(
-                f"[AOI] YOLO padded: x1p={x1p}, y1p={y1p}, x2p={x2p}, y2p={y2p}, "
-                f"pw={pbw}, ph={pbh}, pad={PAD}"
-            )
-
-
-            raw_area = max(0, bw) * max(0, bh)
-            pad_area = max(0, pbw) * max(0, pbh)
-            aoi_area = W * H
-
-            logging.info(
-                f"[AOI] box_area raw={raw_area}, padded={pad_area}, "
-                f"padded/aoi={pad_area/max(aoi_area,1):.3f}"
-            )
-
-            # also ensure valid
-            if x2p <= x1p + 2 or y2p <= y1p + 2:
-                logging.warning(f"Skipping invalid padded box [NON TILED ELSE BRANCH]: ({x1p},{y1p})-({x2p},{y2p})")
-                continue
-
-            box = np.array([x1p, y1p, x2p, y2p], dtype=np.float32)
-
-            # masks, scores, _ = predictor.predict(
-            #     box=box,
-            #     multimask_output=True
-            # )
-
-            # box_area = (x2p - x1p) * (y2p - y1p)
-
-            # min_area = max(20, int(0.002 * box_area))     # instead of hard 80
-            # #max_fill = 0.95 if box_area < 5000 else 0.90   # allow fuller masks on small boxes
-            # max_fill = adaptive_max_fill(box_area, bw, bh, yconf)
-
-            # best = None
-            # best_score = -1.0
-
-            # for m, s in zip(masks, scores):
-            #     area = int(m.sum())
-
-            #     logging.info(
-            #         f"SAM mask: area={area}, box_area={box_area}, "
-            #         f"min_area={min_area}, max_allowed={int(max_fill*box_area)}"
-            #     )
-            #     if area < min_area:
-            #         continue
-                
-            #     fill_ratio = area / max(1, box_area)
-            #     too_full = fill_ratio > max_fill
-
-
-            #     # allow very full masks if SAM+YOLO confident
-            #     if too_full and not (yconf >= 0.80 and float(s) >= 0.85 and fill_ratio <= 0.995):
-            #         continue
-
-            #     s = float(s)
-            #     if s > best_score:
-            #         best = m
-            #         best_score = s
-
-            # if best is None:
-            #     logging.info(
-            #         f"SAM: no mask passed filters (min_area={min_area}, max_fill={max_fill}, "
-            #         f"box_area={box_area}, yconf={yconf:.3f})"
-            #     )
-            #     sam_polys = []
-            #     RECALL["sam_drop"] += 1
-            # else:
-            #     RECALL["sam_ok"] += 1
-            #     #poly = mask_to_polygon({"segmentation": best.astype(np.uint8)}, transform)
-            #     #sam_polys = [(poly, best_score)] if poly is not None else []
-
-
-            #     best = best.astype(np.uint8)
-            #     best_preclip = best.copy()   # <-- add this
-            #     best_area = int(best.sum())
-            #     fill = best_area / max(box_area, 1)
-            #     logging.info(f"SAM best(pre-clip): area={best_area}, box_area={box_area}, fill={fill:.3f}, score={best_score:.3f}")
-
-
-            #     box_mask = np.zeros(best.shape, dtype=np.uint8)
-
-            #     MIN_PAD_PX = 16
-            #     MAX_PAD_PX = 64
-            #     CLIP_EXTRA_PX = 12
-
-            #     pad = int(0.08 * min(bw, bh))
-            #     pad = max(MIN_PAD_PX, min(MAX_PAD_PX, pad))
-
-            #     y1c = max(0, int(y1p - pad - CLIP_EXTRA_PX))
-            #     x1c = max(0, int(x1p - pad - CLIP_EXTRA_PX))
-            #     y2c = min(best.shape[0] - 1, int(y2p + pad + CLIP_EXTRA_PX))
-            #     x2c = min(best.shape[1] - 1, int(x2p + pad + CLIP_EXTRA_PX))
-
-            #     box_mask[y1c:y2c+1, x1c:x2c+1] = 1
-            #     best = (best & box_mask)
-            #     best_clipped_area = int(best.sum())
-
-            #     # 🔒 one-line area-loss guard (prevents half roof loss)
-            #     if best_clipped_area < 0.85 * best_area:
-            #         best = best_preclip
-            #         best_clipped_area = best_area  # keep stats consistent
-
-            #     kept_ratio = best_clipped_area / max(best_area, 1)
-            #     logging.info(f"SAM clipped: area={best_clipped_area}, kept_ratio={kept_ratio:.3f}")
-
-            #     if kept_ratio < 0.85:
-            #         logging.info(f"SAM clip too aggressive (kept_ratio={kept_ratio:.3f}) -> relaxing clip")
-            #         # relax only the clip box (not YOLO)
-            #         relax = 24  # px
-            #         y1c = max(0, y1c - relax); x1c = max(0, x1c - relax)
-            #         y2c = min(best.shape[0]-1, y2c + relax); x2c = min(best.shape[1]-1, x2c + relax)
-
-            #         box_mask = np.zeros(best.shape, dtype=np.uint8)
-            #         box_mask[y1c:y2c+1, x1c:x2c+1] = 1
-            #         best = best & box_mask
-
-            # --- Two-pass SAM (tight + expanded) to reduce half-roof clipping ---
-            union_mask, best_score, min_area, (ex1, ey1, ex2, ey2) = predict_mask_twopass_union(
-                predictor,
-                x1p, y1p, x2p, y2p,
-                yconf=yconf,
-                expand_scale=1.28
-            )
-
-            if union_mask is None:
-                logging.info(
-                    f"[AOI] SAM: no mask passed filters (two-pass) "
-                    f"(box_area={(x2p-x1p)*(y2p-y1p)}, yconf={yconf:.3f})"
-                )
-                sam_polys = []
-                RECALL["sam_drop"] += 1
-            else:
-                RECALL["sam_ok"] += 1
-
-                best = union_mask.astype(np.uint8)
-                best_preclip = best.copy()
-                best_area = int(best.sum())
-
-                # --- Clip around EXPANDED box (loose), with area-loss guard ---
-                MIN_PAD_PX = 16
-                MAX_PAD_PX = 96
-                CLIP_EXTRA_PX = 16
-
-                bw = x2p - x1p
-                bh = y2p - y1p
-                pad = int(0.10 * min(bw, bh))
-                pad = max(MIN_PAD_PX, min(MAX_PAD_PX, pad))
-
-                H, W = img_rgb.shape[:2]
-                x1c = max(0, int(ex1 - pad - CLIP_EXTRA_PX))
-                y1c = max(0, int(ey1 - pad - CLIP_EXTRA_PX))
-                x2c = min(W - 1, int(ex2 + pad + CLIP_EXTRA_PX))
-                y2c = min(H - 1, int(ey2 + pad + CLIP_EXTRA_PX))
-
-                box_mask = np.zeros(best.shape, dtype=np.uint8)
-                box_mask[y1c:y2c+1, x1c:x2c+1] = 1
-
-                best = best & box_mask
-                best_clipped_area = int(best.sum())
-
-                # 🔒 area-loss guard
-                if best_clipped_area < 0.85 * best_area:
-                    best = best_preclip
-                    best_clipped_area = best_area
-                box_area = max(1, (x2p - x1p) * (y2p - y1p))
-
-                # IMPORTANT: keep your existing downstream indentation unchanged
-
-                if int(best.sum()) < min_area:
-                    sam_polys = []
-                else:
-                    poly = mask_to_polygon({"segmentation": best}, transform)
-
-
-                    if poly is None:
+                    if int(best.sum()) < min_area:
                         sam_polys = []
                     else:
+                        poly = mask_to_polygon({"segmentation": best}, transform)
+                        if poly is None:
+                            sam_polys = []
+                        else:
 
-                        # Guard against background-bleed for giant boxes (ONLY reject near-full AOI blobs)
-                        # Guard against background-bleed for giant boxes
-                        box_frac = (bw * bh) / max(1, W * H)
-                        pass_fallback = False
-                        if (box_frac > 0.85) and (x1p <= 1 or y1p <= 1 or x2p >= W-2 or y2p >= H-2):
-                            aoi_area_m2 = (W * H) * (abs(transform.a) ** 2)
-                            poly_frac = poly.area / max(aoi_area_m2, 1e-6)
+                            # Guard against background-bleed for giant boxes (ONLY reject near-full AOI blobs)
+                            # Guard against background-bleed for giant boxes
+                            box_frac = (bw * bh) / max(1, W * H)
+                            pass_fallback = False
+                            if (box_frac > 0.85) and (x1p <= 1 or y1p <= 1 or x2p >= W-2 or y2p >= H-2):
+                                #aoi_area_m2 = (W * H) * (abs(transform.a) ** 2)
+                                aoi_area_m2 = (W * H) * abs(transform.a * transform.e)
+                                poly_frac = poly.area / max(aoi_area_m2, 1e-6)
 
-                            if poly_frac > 0.85:
-                                logging.info(f"[AOI] Giant-edge poly (poly_frac={poly_frac:.3f}, box_frac={box_frac:.3f}) -> fallback to SAM auto")
+                                if poly_frac > 0.85:
+                                    dlog.info(f"[AOI] Giant-edge poly (poly_frac={poly_frac:.3f}, box_frac={box_frac:.3f}) -> fallback to SAM auto")
 
-                                # Fallback: SAM automatic masks + pick best rectangular/solid building
-                                sam_cands = run_sam_on_image(img_rgb, transform, max_aoi_ratio=0.60)
-                                cand = [(p, c) for (p, _, c) in sam_cands]
-                                best_poly = pick_best_building(cand, aoi_bounds=aoi_bounds_from_transform(transform, H, W))
+                                    # Fallback: SAM automatic masks + pick best rectangular/solid building
+                                    sam_cands = run_sam_on_image(img_rgb, transform, max_aoi_ratio=0.60)
+                                    cand = [(p, c) for (p, _, c) in sam_cands]
+                                    best_poly = pick_best_building(cand, aoi_bounds=aoi_bounds_from_transform(transform, H, W))
 
-                                if best_poly is not None:
-                                    sam_polys = [(best_poly, 0.90)]
-                                    poly = best_poly
-                                    best_score = 0.90
-                                    pass_fallback = True
-                                else:
+                                    if best_poly is not None:
+                                        sam_polys = [(best_poly, 0.90)]
+                                        poly = best_poly
+                                        best_score = 0.90
+                                        pass_fallback = True
+                                    else:
+                                        sam_polys = []
+                                        pass_fallback = True
+
+
+                            minx, miny, maxx, maxy = poly.bounds
+                            ww = maxx - minx
+                            hh = maxy - miny
+                            aspect = max(ww, hh) / max(1e-6, min(ww, hh))
+                            dlog.info(
+                                f"POLY stats: area_m2={poly.area:.1f}, aspect={aspect:.2f}, "
+                                f"bounds_w={ww:.1f}, bounds_h={hh:.1f}"
+                            )
+
+                            if not pass_fallback:
+
+                                fill_ratio = poly.area / (box_area * (abs(transform.a) ** 2))
+                                if fill_ratio > 0.80:
                                     sam_polys = []
-                                    pass_fallback = True
-
-
-                        minx, miny, maxx, maxy = poly.bounds
-                        ww = maxx - minx
-                        hh = maxy - miny
-                        aspect = max(ww, hh) / max(1e-6, min(ww, hh))
-                        logging.info(
-                            f"POLY stats: area_m2={poly.area:.1f}, aspect={aspect:.2f}, "
-                            f"bounds_w={ww:.1f}, bounds_h={hh:.1f}"
-                        )
-
-                        if not pass_fallback:
-
-                            fill_ratio = poly.area / (box_area * (abs(transform.a) ** 2))
-                            if fill_ratio > 0.80:
-                                sam_polys = []
-                            elif not is_airport_building(poly, relaxed=True):
-                                sam_polys = []
-                            elif poly.area > 20000:
-                                sam_polys = []
-                            else:
-                                minx, miny, maxx, maxy = poly.bounds
-                                ww = maxx - minx
-                                hh = maxy - miny
-                                aspect = max(ww, hh) / max(1e-6, min(ww, hh))
-                                if aspect > 12.0:
+                                elif not is_airport_building(poly, relaxed=True):
+                                    sam_polys = []
+                                elif poly.area > 20000:
                                     sam_polys = []
                                 else:
-                                    sam_polys = [(poly, best_score)]
+                                    minx, miny, maxx, maxy = poly.bounds
+                                    ww = (maxx - minx)
+                                    hh = (maxy - miny)
+                                    aspect = max(ww, hh) / max(1e-6, min(ww, hh))
+                                    min_dim = min(ww, hh)
+
+                                    # Drop seam/road "strip" artifacts (thin, long, small area)
+                                    # (Your bad case: aspect~8.7, min_dim~1.6m, area~9m2)
+                                    if (min_dim < 3.0 and aspect > 4.0):
+                                        sam_polys = []
+                                    elif aspect > 12.0:
+                                        sam_polys = []
+                                    else:
+                                        sam_polys = [(poly, best_score)]
 
 
-            # Build YOLO bbox polygon in world coords
-            x1w, y1w = rasterio.transform.xy(transform, y1p, x1p, offset="center")
-            x2w, y2w = rasterio.transform.xy(transform, y2p, x2p, offset="center")
+                # Build YOLO bbox polygon in world coords
+                x1w, y1w = rasterio.transform.xy(transform, y1p, x1p, offset="center")
+                x2w, y2w = rasterio.transform.xy(transform, y2p, x2p, offset="center")
 
-            minx = min(x1w, x2w); maxx = max(x1w, x2w)
-            miny = min(y1w, y2w); maxy = max(y1w, y2w)
-            yolo_poly = Polygon([(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy)])
+                minx = min(x1w, x2w); maxx = max(x1w, x2w)
+                miny = min(y1w, y2w); maxy = max(y1w, y2w)
+                yolo_poly = Polygon([(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy)])
 
 
-            # --- OSM fallback only if SAM failed for this YOLO box
-            if not sam_polys and osm is not None:
-                added = False
+                # --- OSM fallback only if SAM failed for this YOLO box
+                # if not sam_polys and osm is not None:
+                #     added = False
+                #     for _, row in osm.iterrows():
+                #         osm_poly = (
+                #             gpd.GeoSeries([row.geometry], crs=osm.crs)
+                #             .to_crs(raster_crs)
+                #             .iloc[0]
+                #         )
+
+                #         # Only accept OSM that intersects this YOLO bbox
+                #         if osm_poly.intersects(yolo_poly) and not overlaps_any(osm_poly, all_buildings):
+                #             all_buildings.append((osm_poly, DEFAULT_HEIGHT, 0.85))
+                #             added = True
+                #             break
+
+                #     if not added:
+                #         dlog.info("YOLO hit but no SAM/OSM geometry → skipping footprint")
+
+
+                for poly, conf in sam_polys:
+                    #final_conf = min(1.0, 0.6 * conf + 0.4 * yconf)
+                    if yconf > 0.9:
+                        final_conf = max(conf, yconf) * 0.9
+                    else:
+                        final_conf = 0.6 * conf + 0.4 * yconf
+
+                    all_buildings.append((poly, DEFAULT_HEIGHT, final_conf))
+
+                # If microtile fallback produced many overlapping candidates,
+                # pick the single best building footprint to avoid unions bleeding into land.
+                # if len(all_buildings) >= 3:
+                #     H, W = img_rgb.shape[:2]
+                #     aoi_b = aoi_bounds_from_transform(transform, H, W)
+
+                #     cands = [(p, c) for (p, _, c) in all_buildings]
+                #     best_poly = pick_best_building(cands, aoi_bounds=aoi_b)
+
+                #     if best_poly is not None:
+                #         all_buildings = [(best_poly, DEFAULT_HEIGHT, 0.85)]
+
+
+        
+        
+
+        
+        log.info("[AOI YOLO SUMMARY] raw_boxes=%d after_nms=%d", yolo_boxes_total, yolo_boxes_total_nms)
+
+        print(f"[AOI YOLO SUMMARY] raw_boxes={yolo_boxes_total}, after_nms={yolo_boxes_total_nms}")
+
+        # --- Normalize/clean all_buildings so it's ALWAYS [(poly, height, conf), ...]
+        normalized = []
+        for item in all_buildings:
+            if not isinstance(item, (tuple, list)):
+                continue
+            if len(item) < 3:
+                continue
+
+            poly = item[0]
+            h = float(item[1])
+            conf = float(item[2])
+
+            #normalized.append((snap_polygon_to_pixel(poly, transform), h, conf))
+            normalized.append((poly, h, conf))
+
+        all_buildings = normalized
+
+        sam_buildings = merge_buildings(all_buildings, iou_thresh=0.55)
+
+        stitch_buf = max(0.2, 0.6 * pixel_size_m)
+        sam_buildings = stitch_touching(sam_buildings, buffer_m=stitch_buf)
+
+        sam_buildings = suppress_duplicates_by_overlap(sam_buildings, overlap_min=0.65)
+
+
+        refined = []
+
+        for poly, h, conf in sam_buildings:
+            replaced = False
+
+            if osm is not None and conf < 0.65:
                 for _, row in osm.iterrows():
                     osm_poly = (
                         gpd.GeoSeries([row.geometry], crs=osm.crs)
                         .to_crs(raster_crs)
                         .iloc[0]
                     )
-
-                    # Only accept OSM that intersects this YOLO bbox
-                    if osm_poly.intersects(yolo_poly) and not overlaps_any(osm_poly, all_buildings):
-                        all_buildings.append((osm_poly, DEFAULT_HEIGHT, 0.85))
-                        added = True
+                    if poly.intersection(osm_poly).area / poly.area > 0.4:
+                        refined.append((osm_poly, h, max(conf, 0.8)))
+                        replaced = True
                         break
 
-                if not added:
-                    logging.info("YOLO hit but no SAM/OSM geometry → skipping footprint")
+            if not replaced:
+                refined.append((poly, h, conf))
+
+        sam_buildings = refined
+
+        cleaned = []
+        for poly, h, conf in sam_buildings:
+            if poly is None or poly.is_empty:
+                continue
+
+            # Basic size guard
+            if poly.area < 8.0:         # too tiny in m^2
+                continue
+            if poly.area > 15000.0:     # too huge (land patches)
+                continue
+
+            hull = poly.convex_hull
+            solidity = poly.area / max(hull.area, 1e-6)
+
+            rect = polygon_rectangularity(poly)
+
+            minx, miny, maxx, maxy = poly.bounds
+            ww = maxx - minx
+            hh = maxy - miny
+            aspect = max(ww, hh) / max(1e-6, min(ww, hh))
+
+            # Strong building-ish constraints (tune if needed)
+            if solidity < 0.18:
+                continue
+            if rect < 0.42:
+                continue
+            if aspect > 18.0:
+                continue
+
+            cleaned.append((poly, h, conf))
+
+        sam_buildings = cleaned
 
 
-            for poly, conf in sam_polys:
-                #final_conf = min(1.0, 0.6 * conf + 0.4 * yconf)
-                if yconf > 0.9:
-                    final_conf = max(conf, yconf) * 0.9
-                else:
-                    final_conf = 0.6 * conf + 0.4 * yconf
 
-                all_buildings.append((poly, DEFAULT_HEIGHT, final_conf))
+        log.info(f"final total merged buildings : {len(sam_buildings)}")
 
-            # If microtile fallback produced many overlapping candidates,
-            # pick the single best building footprint to avoid unions bleeding into land.
-            # if len(all_buildings) >= 3:
-            #     H, W = img_rgb.shape[:2]
-            #     aoi_b = aoi_bounds_from_transform(transform, H, W)
+        if not sam_buildings and all_buildings:
+            log.warning("Merge removed all buildings → using raw SAM outputs")
+            sam_buildings = all_buildings
 
-            #     cands = [(p, c) for (p, _, c) in all_buildings]
-            #     best_poly = pick_best_building(cands, aoi_bounds=aoi_b)
+        else:
+            log.info(f"SAM detected {len(sam_buildings)} buildings")
 
-            #     if best_poly is not None:
-            #         all_buildings = [(best_poly, DEFAULT_HEIGHT, 0.85)]
+        buildings = list(sam_buildings)  # ALWAYS keep SAM results
 
+        if osm is not None:
+            for geom in osm.geometry:
+                if geom.geom_type == "MultiPolygon":
+                    geom = max(geom.geoms, key=lambda g: g.area)
 
-    
-    
-
-    
-    logging.info(
-        f"[AOI YOLO SUMMARY] raw_boxes={yolo_boxes_total}, after_nms={yolo_boxes_total_nms}"
-    )
-    print(f"[AOI YOLO SUMMARY] raw_boxes={yolo_boxes_total}, after_nms={yolo_boxes_total_nms}")
-
-    # --- Normalize/clean all_buildings so it's ALWAYS [(poly, height, conf), ...]
-    normalized = []
-    for item in all_buildings:
-        if not isinstance(item, (tuple, list)):
-            continue
-        if len(item) < 3:
-            continue
-
-        poly = item[0]
-        h = float(item[1])
-        conf = float(item[2])
-
-        #normalized.append((snap_polygon_to_pixel(poly, transform), h, conf))
-        normalized.append((poly, h, conf))
-
-    all_buildings = normalized
-
-    #sam_buildings = merge_buildings(all_buildings, iou_thresh=0.40)
-
-    #sam_buildings = merge_buildings(all_buildings, iou_thresh=0.60)
-
-    # ✅ remove tile-duplicate buildings that survive IoU merge
-    #sam_buildings = suppress_duplicates_by_overlap(sam_buildings, overlap_min=0.60)
-    #sam_buildings = resolve_overlaps_by_subtraction(sam_buildings, min_frac=0.03, buffer_m=0.0)
-
-    # 1) First: stitch tile seam fragments (touching / nearly-touching)
-    # buffer ~ 1-2 pixels in meters (avoid merging different buildings)
-    #stitch_buf = max(0.6, 2.0 * pixel_size_m)
-
-    sam_buildings = merge_buildings(all_buildings, iou_thresh=0.55)
-
-    stitch_buf = max(0.2, 0.6 * pixel_size_m)
-    sam_buildings = stitch_touching(sam_buildings, buffer_m=stitch_buf)
-
-    sam_buildings = suppress_duplicates_by_overlap(sam_buildings, overlap_min=0.65)
-
-
-    # 4) Overlap subtraction LAST, and less aggressive (prevents “half roof disappears”)
-    #sam_buildings = resolve_overlaps_by_subtraction(sam_buildings, min_frac=0.06, buffer_m=0.0)
-    #sam_buildings = resolve_overlaps_by_subtraction(sam_buildings, min_frac=0.25, min_keep_ratio=0.85)
-
-
-    refined = []
-
-    for poly, h, conf in sam_buildings:
-        replaced = False
-
-        if osm is not None and conf < 0.65:
-            for _, row in osm.iterrows():
-                osm_poly = (
-                    gpd.GeoSeries([row.geometry], crs=osm.crs)
+                poly = (
+                    gpd.GeoSeries([geom], crs=osm.crs)
                     .to_crs(raster_crs)
                     .iloc[0]
                 )
-                if poly.intersection(osm_poly).area / poly.area > 0.4:
-                    refined.append((osm_poly, h, max(conf, 0.8)))
-                    replaced = True
-                    break
 
-        if not replaced:
-            refined.append((poly, h, conf))
+                if not is_airport_building(poly):
+                    #confidence *= 0.5
+                    continue
 
-    sam_buildings = refined
+                 # only skip if overlaps SAM
+                if any(poly.intersects(p) for p,_,_ in sam_buildings):
+                    continue
 
-    cleaned = []
-    for poly, h, conf in sam_buildings:
-        if poly is None or poly.is_empty:
-            continue
+                buildings.append((poly, DEFAULT_HEIGHT, 0.95))
 
-        # Basic size guard
-        if poly.area < 8.0:         # too tiny in m^2
-            continue
-        if poly.area > 15000.0:     # too huge (land patches)
-            continue
+        if not buildings:
+            log.warning("No buildings detected")
+            #return None
 
-        hull = poly.convex_hull
-        solidity = poly.area / max(hull.area, 1e-6)
-
-        rect = polygon_rectangularity(poly)
-
-        minx, miny, maxx, maxy = poly.bounds
-        ww = maxx - minx
-        hh = maxy - miny
-        aspect = max(ww, hh) / max(1e-6, min(ww, hh))
-
-        # Strong building-ish constraints (tune if needed)
-        if solidity < 0.18:
-            continue
-        if rect < 0.42:
-            continue
-        if aspect > 18.0:
-            continue
-
-        cleaned.append((poly, h, conf))
-
-    sam_buildings = cleaned
-
-
-
-    logging.info(f"final total merged buildings : {len(sam_buildings)}")
-
-    if not sam_buildings and all_buildings:
-        logging.warning("Merge removed all buildings → using raw SAM outputs")
-        sam_buildings = all_buildings
-
-    else:
-        logging.info(f"SAM detected {len(sam_buildings)} buildings")
-
-    buildings = list(sam_buildings)  # ALWAYS keep SAM results
-
-    if osm is not None:
-        for geom in osm.geometry:
-            if geom.geom_type == "MultiPolygon":
-                geom = max(geom.geoms, key=lambda g: g.area)
-
-            poly = (
-                gpd.GeoSeries([geom], crs=osm.crs)
-                .to_crs(raster_crs)
-                .iloc[0]
-            )
-
-            if not is_airport_building(poly):
-                #confidence *= 0.5
-                continue
-
-             # only skip if overlaps SAM
-            if any(poly.intersects(p) for p,_,_ in sam_buildings):
-                continue
-
-            buildings.append((poly, DEFAULT_HEIGHT, 0.95))
-
-    if not buildings:
-        logging.warning("No buildings detected")
-        #return None
-
-    
-    for poly, _, conf in buildings:
-        height = None
-
-        # 1️⃣ OSM height if available
-        #height = find_matching_osm_height(poly, osm, raster_crs)
-
-        # 2️⃣ Shadow height if SAM confident
-        shadow_info = None
-
-        ## disabling height calculation for now so that we can focus on footprinting first, but after footprint height is next priority
         
-        # if height is None and conf >= 0.75:
-        #     shadow_info = estimate_height_from_shadow(poly, img_rgb, transform, raster_crs)
-        #     if shadow_info:
-        #         height = shadow_info["height"]
+        for poly, _, conf in buildings:
+            height = None
 
-        if height is None and conf >= 0.75:
-            shadow_info = estimate_height_with_retries(poly, img_rgb, transform, raster_crs, conf=conf, max_tries=3)
-            if shadow_info:
-                height = shadow_info["height"]
+            # 1️⃣ OSM height if available
+            #height = find_matching_osm_height(poly, osm, raster_crs)
 
+            # 2️⃣ Shadow height if SAM confident
+            shadow_info = None
 
+            ## disabling height calculation for now so that we can focus on footprinting first, but after footprint height is next priority
+            
+            # if height is None and conf >= 0.75:
+            #     shadow_info = estimate_height_from_shadow(poly, img_rgb, transform, raster_crs)
+            #     if shadow_info:
+            #         height = shadow_info["height"]
 
-        # 3️⃣ Fallback
-        if height is None:
-            logging.debug("FALLING BACK TO DEAFULT HEIGHT")
-            height = DEFAULT_HEIGHT
-            #conf = min(conf, 0.5)
-
-
-        print(f"CONF={conf:.2f} → HEIGHT={height}")
-
-        #final_buildings.append((poly, height, conf,shadow_info))
-        final_buildings.append((poly, height, conf,shadow_info))
-
-    #polys, heights, confidences = zip(*final_buildings)
-    polys = [b[0] for b in final_buildings]
-    heights = [b[1] for b in final_buildings]
-    confidences = [b[2] for b in final_buildings]
-    shadows = [b[3] for b in final_buildings]  # may be None
-
-    #logging.info(f"First Ploy Centroid: polys[0].centroid.x = {polys[0].centroid.x} , polys[0].centroid.y = {polys[0].centroid.y}")
-    if polys:
-        logging.info(
-            f"First Poly Centroid: x={polys[0].centroid.x:.2f}, "
-            f"y={polys[0].centroid.y:.2f}"
-        )
-    else:
-        logging.warning("No polygons available for centroid logging")
+            if height is None and conf >= 0.75:
+                shadow_info = estimate_height_with_retries(poly, img_rgb, transform, raster_crs, conf=conf, max_tries=3,log=log)
+                if shadow_info:
+                    height = shadow_info["height"]
 
 
 
-    features = []
-    b_id = 1
-    s_id = 1
+            # 3️⃣ Fallback
+            if height is None:
+                log.debug("FALLING BACK TO DEAFULT HEIGHT")
+                height = DEFAULT_HEIGHT
+                #conf = min(conf, 0.5)
 
-    for poly, height, conf, shadow in final_buildings:
-        bid = f"B{b_id}"
-        b_id += 1
 
-        # Building feature
-        features.append({
-            "type": "Feature",
-            "geometry": poly,
-            "properties": {
-                "feature_type": "building",
-                "id": bid,
-                "height": height,
-                "confidence": conf
-            }
-        })
+            log.info("CONF=%.2f -> HEIGHT=%.2f", conf, height)
 
-        # Shadow feature
-        if shadow:
-            sid = f"S{s_id}"
-            s_id += 1
+            #final_buildings.append((poly, height, conf,shadow_info))
+            final_buildings.append((poly, height, conf,shadow_info))
 
+        #polys, heights, confidences = zip(*final_buildings)
+        polys = [b[0] for b in final_buildings]
+        heights = [b[1] for b in final_buildings]
+        confidences = [b[2] for b in final_buildings]
+        shadows = [b[3] for b in final_buildings]  # may be None
+
+        #logging.info(f"First Ploy Centroid: polys[0].centroid.x = {polys[0].centroid.x} , polys[0].centroid.y = {polys[0].centroid.y}")
+        if polys:
+            log.info(
+                f"First Poly Centroid: x={polys[0].centroid.x:.2f}, "
+                f"y={polys[0].centroid.y:.2f}"
+            )
+        else:
+            log.warning("No polygons available for centroid logging")
+
+
+
+        features = []
+        b_id = 1
+        s_id = 1
+
+        for poly, height, conf, shadow in final_buildings:
+            bid = f"B{b_id}"
+            b_id += 1
+
+            # Building feature
             features.append({
                 "type": "Feature",
-                "geometry": shadow["shadow_polygon"],
+                "geometry": poly,
                 "properties": {
-                    "feature_type": "shadow",
-                    "id": sid,
-                    "building_id": bid,
-                    "shadow_len": shadow["shadow_length_m"],
-                    "sun_azimuth": shadow["sun_azimuth"]
+                    "feature_type": "building",
+                    "id": bid,
+                    "height": height,
+                    "confidence": conf
                 }
             })
 
-    # --------------------------------------------------
-    # FINAL OUTPUT GUARD
-    # --------------------------------------------------
+            # Shadow feature
+            if shadow:
+                sid = f"S{s_id}"
+                s_id += 1
 
-    if not features:
-        logging.warning("No features generated → returning empty AOI result")
+                features.append({
+                    "type": "Feature",
+                    "geometry": shadow["shadow_polygon"],
+                    "properties": {
+                        "feature_type": "shadow",
+                        "id": sid,
+                        "building_id": bid,
+                        "shadow_len": shadow["shadow_length_m"],
+                        "sun_azimuth": shadow["sun_azimuth"]
+                    }
+                })
 
+        # --------------------------------------------------
+        # FINAL OUTPUT GUARD
+        # --------------------------------------------------
+
+        if not features:
+            log.warning("No features generated → returning empty AOI result")
+
+            return {
+                "geojson": None,
+                "glb": None,
+                "tiles": tiles if aoi_area_m2 > MIN_TILING_AREA_M2 else [],
+                "reason": "no_buildings_detected"
+            }
+
+        gdf = gpd.GeoDataFrame.from_features(features, crs=raster_crs).to_crs(epsg=4326)
+
+        # 🔒 STRICT AOI GUARD (fix outside-AOI buildings)
+        gdf = clip_gdf_to_aoi_4326(gdf, bounds)
+
+        if gdf.empty:
+            log.warning("All features clipped out by AOI guard -> returning empty")
+            return {
+                "geojson": None,
+                "glb": None,
+                "tiles": tiles if aoi_area_m2 > MIN_TILING_AREA_M2 else [],
+                "reason": "all_features_outside_aoi_after_clip"
+            }
+
+        gdf.to_file(out_geojson_abs, driver="GeoJSON")
+
+        # Export GLB using only building polys that survived clip
+        # (Keep your original final_buildings list, but filter by AOI now)
+        from shapely.geometry import box as shp_box
+        aoi_poly_4326 = shp_box(*bounds)
+        aoi_poly_raster = gpd.GeoSeries([aoi_poly_4326], crs="EPSG:4326").to_crs(raster_crs).iloc[0]
+
+        kept_buildings = []
+        for poly, height, conf, shadow in final_buildings:
+            if poly is None or poly.is_empty:
+                continue
+            clipped = poly.intersection(aoi_poly_raster)
+            if clipped.is_empty:
+                continue
+            if clipped.geom_type == "MultiPolygon":
+                clipped = max(clipped.geoms, key=lambda g: g.area)
+            kept_buildings.append((clipped, height, conf, shadow))
+
+        export_glb([flat_roof(p, h) for p, h, _, _ in kept_buildings], out_glb_abs)
+
+        log.warning(
+            f"[RECALL] YOLO={RECALL['yolo']} | SAM_OK={RECALL['sam_ok']} | SAM_DROP={RECALL['sam_drop']} | LOSS={(RECALL['sam_drop']/max(1,RECALL['yolo'])):.2%}"
+        )
+
+
+        log.info("RUN_DONE run_id=%s geojson=%s glb=%s", run_id, out_geojson_abs, out_glb_abs)
+        log.info("SAM_DEBUG_DIR %s", os.path.join(SAM_DEBUG_DIR, run_id))
+        log.info("YOLO_DEBUG_DIR %s", os.path.join(OUT_DIR, "yolo_debug", run_id))
+
+
+        return {
+            "geojson": out_geojson_rel,
+            "glb": out_glb_rel,
+            "tiles": tiles if aoi_area_m2 > MIN_TILING_AREA_M2 else []
+        }
+    except Exception:
+        log.exception("detect_buildings crashed")
         return {
             "geojson": None,
             "glb": None,
-            "tiles": tiles if aoi_area_m2 > MIN_TILING_AREA_M2 else [],
-            "reason": "no_buildings_detected"
+            "tiles": [],
+            "reason": "exception",
+            "run_id": run_id,
+            "log_file": f"{LOGS_DIR}/{run_id}.log",
         }
-
-    # gdf = gpd.GeoDataFrame.from_features(features, crs=raster_crs).to_crs(epsg=4326)
-
-    
-    # gdf["geometry"] = gdf.geometry.translate(xoff=0.0, yoff=0.0)
-    # gdf.to_file(OUT_GEOJSON, driver="GeoJSON")
-
-    # export_glb(
-    #     [flat_roof(poly, height) for poly, height, _, _ in final_buildings],
-    #     OUT_GLB
-    # )
-
-
-
-
-    # return {
-    #     "geojson": "output/buildings.geojson",
-    #     "glb": "output/aoi_buildings.glb",
-    #     "tiles": tiles if aoi_area_m2 > MIN_TILING_AREA_M2 else []
-    # }
-
-    gdf = gpd.GeoDataFrame.from_features(features, crs=raster_crs).to_crs(epsg=4326)
-
-    # 🔒 STRICT AOI GUARD (fix outside-AOI buildings)
-    gdf = clip_gdf_to_aoi_4326(gdf, bounds)
-
-    if gdf.empty:
-        logging.warning("All features clipped out by AOI guard -> returning empty")
-        return {
-            "geojson": None,
-            "glb": None,
-            "tiles": tiles if aoi_area_m2 > MIN_TILING_AREA_M2 else [],
-            "reason": "all_features_outside_aoi_after_clip"
-        }
-
-    gdf.to_file(out_geojson_abs, driver="GeoJSON")
-
-    # Export GLB using only building polys that survived clip
-    # (Keep your original final_buildings list, but filter by AOI now)
-    from shapely.geometry import box as shp_box
-    aoi_poly_4326 = shp_box(*bounds)
-    aoi_poly_raster = gpd.GeoSeries([aoi_poly_4326], crs="EPSG:4326").to_crs(raster_crs).iloc[0]
-
-    # kept_buildings = []
-    # for poly, height, conf, shadow in final_buildings:
-    #     poly_4326 = gpd.GeoSeries([poly], crs=raster_crs).to_crs(epsg=4326).iloc[0]
-    #     if not poly_4326.intersects(aoi_poly_4326):
-    #         continue
-    #     kept_buildings.append((poly, height, conf, shadow))
-
-    # export_glb(
-    #     [flat_roof(poly, height) for poly, height, _, _ in kept_buildings],
-    #     out_glb_abs
-    # )
-
-    kept_buildings = []
-    for poly, height, conf, shadow in final_buildings:
-        if poly is None or poly.is_empty:
-            continue
-        clipped = poly.intersection(aoi_poly_raster)
-        if clipped.is_empty:
-            continue
-        if clipped.geom_type == "MultiPolygon":
-            clipped = max(clipped.geoms, key=lambda g: g.area)
-        kept_buildings.append((clipped, height, conf, shadow))
-
-    export_glb([flat_roof(p, h) for p, h, _, _ in kept_buildings], out_glb_abs)
-
-    logging.warning(
-        f"[RECALL] YOLO={RECALL['yolo']} | SAM_OK={RECALL['sam_ok']} | SAM_DROP={RECALL['sam_drop']} | LOSS={(RECALL['sam_drop']/max(1,RECALL['yolo'])):.2%}"
-    )
-
-    return {
-        "geojson": out_geojson_rel,
-        "glb": out_glb_rel,
-        "tiles": tiles if aoi_area_m2 > MIN_TILING_AREA_M2 else []
-    }

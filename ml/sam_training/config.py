@@ -11,9 +11,9 @@
 # # Box robustness
 # BOX_DROPOUT_PROB = 0.20   # ✅ keep this
 
-# Loss balance
-POS_WEIGHT = 1.2
-NEG_WEIGHT = 0.7          # strong suppression of false positives
+# # Loss balance
+# POS_WEIGHT = 1.2
+# NEG_WEIGHT = 0.7          # strong suppression of false positives
 
 
 
