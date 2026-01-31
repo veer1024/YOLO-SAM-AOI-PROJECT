@@ -69,29 +69,15 @@ MEGA_KEEP_CONF = 0.92
 
 ### MEAGBOX AOI
 
-# MEGA_AREA_THR_AOI  = 0.60
-# MEGA_SIDE_THR_AOI  = 0.95
-# STRIP_SIDE_THR_AOI = 0.90
-# STRIP_OTHER_THR_AOI = 0.20
-# MEGA_KEEP_CONF_AOI = 0.95
-
-
-# AOI: be much less aggressive. Keep mega boxes and let SAM decide.
-MEGA_AREA_THR_AOI = 0.85        # only truly huge boxes
-MEGA_SIDE_THR_AOI = 0.98
-
-# Only treat "strip" as extreme thin bands
-STRIP_SIDE_THR_AOI = 0.95
-STRIP_OTHER_THR_AOI = 0.12
-
-# If you still want a keep conf, make it achievable
-MEGA_KEEP_CONF_AOI = 0.90
-
+MEGA_AREA_THR_AOI  = 0.60
+MEGA_SIDE_THR_AOI  = 0.95
+STRIP_SIDE_THR_AOI = 0.90
+STRIP_OTHER_THR_AOI = 0.20
 
 STRIP_SIDE_THR_TILE = 0.92
 STRIP_OTHER_THR_TILE = 0.22
 STRIP_OTHER_MAX_AOI = 0.55
-
+MEGA_KEEP_CONF_AOI = 0.95
 
 MIN_MASK_AREA_M2 = 7.0  # tune: 5–20 m² depending on smallest buildings you want
 # --------------------------------------------------
@@ -880,197 +866,6 @@ def fuse_boxes_conservative(boxes, img_w, img_h):
 
     return fused
 
-def normalize_yolo_boxes(boxes):
-    """
-    Normalize YOLO boxes into a single canonical format:
-      (x1, y1, x2, y2, conf)
-
-    Supports:
-      - dict: {"xyxy":[x1,y1,x2,y2], "conf":0.7} (or "confidence")
-      - tuple/list length 5: (x1,y1,x2,y2,conf)
-      - tuple/list length 6: (x1,y1,x2,y2,conf,cls)
-      - tuple/list length 3: ((x1,y1,x2,y2), conf, cls)   <-- your crash case
-    """
-    out = []
-    if not boxes:
-        return out
-
-    for b in boxes:
-        # dict case
-        if isinstance(b, dict):
-            xyxy = b.get("xyxy") or b.get("bbox") or b.get("box") or b.get("xyxyc")
-            if xyxy is None:
-                continue
-            x1, y1, x2, y2 = xyxy
-            conf = float(b.get("conf", b.get("confidence", 1.0)))
-            out.append((float(x1), float(y1), float(x2), float(y2), conf))
-            continue
-
-        # list/tuple case
-        if isinstance(b, (list, tuple)):
-            if len(b) == 5:
-                x1, y1, x2, y2, conf = b
-                out.append((float(x1), float(y1), float(x2), float(y2), float(conf)))
-                continue
-
-            if len(b) == 6:
-                x1, y1, x2, y2, conf, _cls = b
-                out.append((float(x1), float(y1), float(x2), float(y2), float(conf)))
-                continue
-
-            # CRITICAL: your crash format
-            if len(b) == 3 and isinstance(b[0], (list, tuple)) and len(b[0]) == 4:
-                (x1, y1, x2, y2), conf, _cls = b
-                out.append((float(x1), float(y1), float(x2), float(y2), float(conf)))
-                continue
-
-    return out
-
-
-def _box_xyxy(b):
-    # tuple: (x1,y1,x2,y2,conf) or (x1,y1,x2,y2)
-    if isinstance(b, (tuple, list)):
-        return float(b[0]), float(b[1]), float(b[2]), float(b[3])
-    # dict: {"xyxy":[x1,y1,x2,y2], "conf":...}
-    x1, y1, x2, y2 = b["xyxy"]
-    return float(x1), float(y1), float(x2), float(y2)
-
-def _box_conf(b, default=1.0):
-    if isinstance(b, (tuple, list)):
-        return float(b[4]) if len(b) >= 5 else default
-    return float(b.get("conf", default))
-
-def _make_box_like(orig, x1, y1, x2, y2, conf):
-    # preserve original type (tuple in your pipeline)
-    if isinstance(orig, (tuple, list)):
-        return (int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2)), float(conf))
-    return {"xyxy": [int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2))], "conf": float(conf)}
-
-
-def merge_stacked_boxes(boxes, img_w, img_h,
-                        x_iou_min=0.35,
-                        y_overlap_min=0.05,
-                        gap_max_frac=0.06):
-    """
-    Merge boxes that are vertically stacked parts of the same building.
-    Input can be:
-      - tuples: (x1,y1,x2,y2,conf)
-      - dicts: {"xyxy":(x1,y1,x2,y2), "conf":...}
-    Output: list of tuples (x1,y1,x2,y2,conf)
-    """
-
-    if not boxes:
-        return boxes
-
-    # normalize to tuples
-    norm = []
-    for b in boxes:
-        if isinstance(b, dict):
-            x1, y1, x2, y2 = b["xyxy"]
-            conf = float(b.get("conf", 1.0))
-        else:
-            x1, y1, x2, y2, conf = b
-        norm.append((int(x1), int(y1), int(x2), int(y2), float(conf)))
-
-    boxes = norm
-
-    def x_iou(a, b):
-        ax1, ay1, ax2, ay2, _ = a
-        bx1, by1, bx2, by2, _ = b
-        inter = max(0, min(ax2, bx2) - max(ax1, bx1))
-        ua = (ax2 - ax1) + (bx2 - bx1) - inter
-        return inter / max(1, ua)
-
-    merged = []
-    used = [False] * len(boxes)
-
-    for i, a in enumerate(boxes):
-        if used[i]:
-            continue
-
-        ax1, ay1, ax2, ay2, ac = a
-        cur = a
-        used[i] = True
-
-        changed = True
-        while changed:
-            changed = False
-            cx1, cy1, cx2, cy2, cc = cur
-
-            for j, b in enumerate(boxes):
-                if used[j]:
-                    continue
-
-                bx1, by1, bx2, by2, bc = b
-
-                # must align reasonably in X
-                if x_iou(cur, b) < x_iou_min:
-                    continue
-
-                # compute vertical relationship
-                top = min(cy2, by2) - max(cy1, by1)  # overlap amount
-                top_frac = top / max(1, min(cy2 - cy1, by2 - by1))
-
-                gap = max(by1 - cy2, cy1 - by2)  # positive if separated
-                gap_frac = gap / max(1, img_h)
-
-                # stacked if either slightly overlapping OR small gap
-                if top_frac >= y_overlap_min or gap_frac <= gap_max_frac:
-                    nx1 = min(cx1, bx1)
-                    ny1 = min(cy1, by1)
-                    nx2 = max(cx2, bx2)
-                    ny2 = max(cy2, by2)
-                    nc = max(cc, bc)  # keep strongest conf
-                    cur = (nx1, ny1, nx2, ny2, nc)
-                    used[j] = True
-                    changed = True
-
-        merged.append(cur)
-
-    return merged
-
-def to_xyxy_conf_list(boxes):
-    """
-    Convert any YOLO box formats to canonical list of 5-tuples:
-        (x1, y1, x2, y2, conf)
-    Supported inputs:
-      - dict: {"xyxy":[x1,y1,x2,y2], "conf":c} or {"xyxy_int":..., "score":...}
-      - tuple/list: (x1,y1,x2,y2,conf)
-      - tuple/list: ((x1,y1,x2,y2), conf, cls)  <-- your "expected 5 got 3" case
-      - tuple/list: (x1,y1,x2,y2)  (conf assumed 1.0)
-    """
-    out = []
-    for b in (boxes or []):
-        # dict format
-        if isinstance(b, dict):
-            xyxy = b.get("xyxy") or b.get("xyxy_int") or b.get("box")
-            if xyxy is None or len(xyxy) != 4:
-                continue
-            c = b.get("conf", b.get("score", b.get("confidence", 1.0)))
-            out.append((float(xyxy[0]), float(xyxy[1]), float(xyxy[2]), float(xyxy[3]), float(c)))
-            continue
-
-        # tuple/list formats
-        if isinstance(b, (tuple, list)):
-            if len(b) == 5:
-                x1, y1, x2, y2, c = b
-                out.append((float(x1), float(y1), float(x2), float(y2), float(c)))
-                continue
-
-            if len(b) == 4:
-                x1, y1, x2, y2 = b
-                out.append((float(x1), float(y1), float(x2), float(y2), 1.0))
-                continue
-
-            # IMPORTANT: handles your error "expected 5 got 3"
-            # example: ((x1,y1,x2,y2), conf, cls)
-            if len(b) == 3 and isinstance(b[0], (tuple, list)) and len(b[0]) == 4:
-                (x1, y1, x2, y2), c, _cls = b
-                out.append((float(x1), float(y1), float(x2), float(y2), float(c)))
-                continue
-
-    return out
-
 
 def is_mega_or_strip_box(x1p,y1p,x2p,y2p, tile_w,tile_h, yconf):
     bw = max(1, x2p-x1p); bh = max(1, y2p-y1p)
@@ -1116,27 +911,6 @@ def looks_like_container_box(x1, y1, x2, y2, W, H):
 
     return False
 
-def drop_edge_strips(boxes, W, H, min_touch=2, max_w_frac=0.25, min_h_frac=0.75, conf_max=0.25):
-    out = []
-    for b in boxes:
-        x1,y1,x2,y2 = _box_xyxy(b)
-        conf = _box_conf(b)
-        bw, bh = (x2-x1), (y2-y1)
-
-        touches = 0
-        if x1 <= 1: touches += 1
-        if y1 <= 1: touches += 1
-        if x2 >= W-2: touches += 1
-        if y2 >= H-2: touches += 1
-
-        if (touches >= min_touch and
-            (bw / max(W,1)) <= max_w_frac and
-            (bh / max(H,1)) >= min_h_frac and
-            conf <= conf_max):
-            continue
-
-        out.append(b)
-    return out
 
 def drop_container_boxes(boxes, W, H, conf_margin=0.06):
     """
@@ -1185,54 +959,32 @@ def drop_container_boxes(boxes, W, H, conf_margin=0.06):
     return [b for k, b in zip(keep, boxes) if k]
 
 
-# def is_mega_or_strip_box_aoi(x1p,y1p,x2p,y2p, W,H, yconf):
-#     bw = max(1, x2p-x1p); bh = max(1, y2p-y1p)
-#     area_frac = (bw*bh) / max(1, W*H)
-#     w_frac = bw / max(1, W)
-#     h_frac = bh / max(1, H)
+def is_mega_or_strip_box_aoi(x1p,y1p,x2p,y2p, W,H, yconf):
+    bw = max(1, x2p-x1p); bh = max(1, y2p-y1p)
+    area_frac = (bw*bh) / max(1, W*H)
+    w_frac = bw / max(1, W)
+    h_frac = bh / max(1, H)
 
 
-#     aspect = max(bw / bh, bh / bw)
+    aspect = max(bw / bh, bh / bw)
 
-#     # --- NEW: container-box heuristic (your failing case) ---
-#     # If a box covers a large chunk of AOI, it is almost always a "container".
-#     if area_frac >= 0.40:
-#         return True
-#     if (w_frac >= 0.75 and h_frac >= 0.35 and aspect >= 1.6 and area_frac >= 0.25):
-#         return True
-
-#     mega = (area_frac >= MEGA_AREA_THR_AOI) or (w_frac >= MEGA_SIDE_THR_AOI) or (h_frac >= MEGA_SIDE_THR_AOI)
-
-#     # strip = ((w_frac >= STRIP_SIDE_THR_AOI and h_frac >= STRIP_OTHER_MAX_AOI) or
-#     #          (h_frac >= STRIP_SIDE_THR_AOI and w_frac >= STRIP_OTHER_MAX_AOI))
-
-#     strip = ((w_frac >= STRIP_SIDE_THR_AOI and h_frac <= STRIP_OTHER_MAX_AOI) or
-#          (h_frac >= STRIP_SIDE_THR_AOI and w_frac <= STRIP_OTHER_MAX_AOI))
-
-#     if (mega or strip) and (yconf < MEGA_KEEP_CONF_AOI):
-#         return True
-#     return False
-
-
-def is_mega_or_strip_box_aoi(x1, y1, x2, y2, W, H, conf):
-    bw = max(1, (x2 - x1))
-    bh = max(1, (y2 - y1))
-    w_frac = bw / float(W)
-    h_frac = bh / float(H)
-    area_frac = (bw * bh) / float(W * H)
-
-    # STRIP: very thin bands only (these are usually roads/edges/tiling artifacts)
-    is_strip = ((w_frac >= STRIP_SIDE_THR_AOI and h_frac <= STRIP_OTHER_THR_AOI) or
-                (h_frac >= STRIP_SIDE_THR_AOI and w_frac <= STRIP_OTHER_THR_AOI))
-    if is_strip and conf < 0.85:
+    # --- NEW: container-box heuristic (your failing case) ---
+    # If a box covers a large chunk of AOI, it is almost always a "container".
+    if area_frac >= 0.40:
+        return True
+    if (w_frac >= 0.75 and h_frac >= 0.35 and aspect >= 1.6 and area_frac >= 0.25):
         return True
 
-    # MEGA: do NOT drop in AOI unless extremely low-confidence.
-    # Let SAM handle it; later you already have container/NMS/merge logic.
-    is_mega = (area_frac >= MEGA_AREA_THR_AOI) or (w_frac >= MEGA_SIDE_THR_AOI) or (h_frac >= MEGA_SIDE_THR_AOI)
-    if is_mega and conf < 0.15:
-        return True
+    mega = (area_frac >= MEGA_AREA_THR_AOI) or (w_frac >= MEGA_SIDE_THR_AOI) or (h_frac >= MEGA_SIDE_THR_AOI)
 
+    # strip = ((w_frac >= STRIP_SIDE_THR_AOI and h_frac >= STRIP_OTHER_MAX_AOI) or
+    #          (h_frac >= STRIP_SIDE_THR_AOI and w_frac >= STRIP_OTHER_MAX_AOI))
+
+    strip = ((w_frac >= STRIP_SIDE_THR_AOI and h_frac <= STRIP_OTHER_MAX_AOI) or
+         (h_frac >= STRIP_SIDE_THR_AOI and w_frac <= STRIP_OTHER_MAX_AOI))
+
+    if (mega or strip) and (yconf < MEGA_KEEP_CONF_AOI):
+        return True
     return False
 
 
@@ -1288,7 +1040,130 @@ def snap_geom_to_raster_grid(geom, raster_transform):
     return shp_transform(_snap, geom)
 
 
+def load_osm_cache_best_effort(bounds, raster_crs="EPSG:3857"):
+    """
+    Fallback loader:
+    - Finds cached AOI that overlaps requested bounds most.
+    - If none overlap, pick nearest by centroid distance.
+    - Returns cached buildings CLIPPED to requested bounds.
+    """
+    if not os.path.exists(OSM_CACHE_INDEX):
+        return None
 
+    try:
+        idx = gpd.read_file(OSM_CACHE_INDEX)
+        if idx.empty:
+            return None
+    except Exception as e:
+        BOOT_LOG.warning("Failed to read OSM cache index: %s", e)
+        return None
+
+    west, south, east, north = bounds
+    req_geom = box(west, south, east, north)
+    req_gdf = gpd.GeoDataFrame(geometry=[req_geom], crs="EPSG:4326")
+
+    # Prefer metric for overlap/distance scoring
+    req_m = req_gdf.to_crs(raster_crs).geometry.iloc[0]
+    idx_m = idx.to_crs(raster_crs)
+
+    # Compute overlap area (in m^2)
+    overlaps = idx_m.geometry.intersection(req_m)
+    idx_m["overlap_area"] = overlaps.area
+
+    # 1) pick best overlapping
+    cand = idx_m[idx_m["overlap_area"] > 0].copy()
+    if not cand.empty:
+        best = cand.sort_values("overlap_area", ascending=False).iloc[0]
+    else:
+        # 2) else pick nearest centroid
+        idx_m["dist"] = idx_m.geometry.centroid.distance(req_m.centroid)
+        best = idx_m.sort_values("dist", ascending=True).iloc[0]
+
+    best_path = best.get("path", None)
+    if not best_path or not os.path.exists(best_path):
+        return None
+
+    try:
+        gdf = gpd.read_file(best_path)
+        if gdf is None or gdf.empty:
+            return None
+    except Exception as e:
+        BOOT_LOG.warning("Failed to load fallback cached OSM file: %s", e)
+        return None
+
+    # Clip cached buildings to requested AOI bounds
+    try:
+        gdf = gdf.set_crs("EPSG:4326", allow_override=True)
+        clipped = gpd.clip(gdf, req_gdf)
+        if clipped.empty:
+            return None
+        BOOT_LOG.warning(
+            "Using fallback OSM cache from %s (overlap_area=%.1f)",
+            os.path.basename(best_path),
+            float(best.get("overlap_area", 0.0)),
+        )
+        return clipped
+    except Exception as e:
+        BOOT_LOG.warning("Fallback clip failed: %s", e)
+        return None
+
+
+def osm_cache_key(bounds):
+    """
+    bounds = (west, south, east, north)
+    """
+    s = json.dumps([round(b, 6) for b in bounds])
+    return hashlib.md5(s.encode()).hexdigest()
+
+def save_osm_cache(gdf, bounds):
+    key = osm_cache_key(bounds)
+    path = os.path.join(OSM_CACHE_DIR, f"osm_{key}.geojson")
+    
+    if gdf.crs is None:
+        gdf = gdf.set_crs("EPSG:4326", allow_override=True)
+    
+    gdf.to_file(path, driver="GeoJSON")
+    BOOT_LOG.info("OSM cache saved: %s", path)
+
+    # ---- Update cache index ----
+    west, south, east, north = bounds
+    geom = box(west, south, east, north)
+
+    rec = gpd.GeoDataFrame(
+        [{"key": key, "path": path}],
+        geometry=[geom],
+        crs="EPSG:4326",
+    )
+
+    if os.path.exists(OSM_CACHE_INDEX):
+        try:
+            idx = gpd.read_file(OSM_CACHE_INDEX)
+            # remove old record for same key if exists
+            if "key" in idx.columns:
+                idx = idx[idx["key"] != key]
+            idx = pd.concat([idx, rec], ignore_index=True)
+        except Exception as e:
+            BOOT_LOG.warning("Failed reading OSM cache index, recreating: %s", e)
+            idx = rec
+    else:
+        idx = rec
+
+    idx.to_file(OSM_CACHE_INDEX, driver="GeoJSON")
+
+def load_osm_cache(bounds):
+    key = osm_cache_key(bounds)
+    path = os.path.join(OSM_CACHE_DIR, f"osm_{key}.geojson")
+
+    if os.path.exists(path):
+        try:
+            gdf = gpd.read_file(path)
+            if not gdf.empty:
+                BOOT_LOG.info("Loaded OSM from cache")
+                return gdf
+        except Exception as e:
+            BOOT_LOG.warning("Failed to read OSM cache: %s", e)
+
+    return None
 
 SHADOW_RETRY_LEVELS = [
     # try 1: current strict-ish
@@ -1303,6 +1178,25 @@ SHADOW_RETRY_LEVELS = [
     dict(seed_dilate=4, open_iter=0, close_iter=1, min_area=60,
          perp_margin_min=14, perp_margin_max=36, min_shadow_rays=12),
 ]
+
+
+def osm_height_from_tags(osm_row):
+    """
+    Extract height from OSM row safely.
+    """
+    if "height" in osm_row and osm_row["height"] is not None:
+        try:
+            return float(str(osm_row["height"]).replace("m", ""))
+        except:
+            pass
+
+    if "building:levels" in osm_row and osm_row["building:levels"] is not None:
+        try:
+            return float(osm_row["building:levels"]) * 3.0
+        except:
+            pass
+
+    return None
 
 
 
@@ -1791,6 +1685,31 @@ def is_box_too_big(x1p, y1p, x2p, y2p, img_w, img_h, frac_thresh):
 
 
 
+def find_matching_osm_height(poly, osm_gdf, raster_crs):
+    """
+    Returns OSM height if overlap is strong.
+    """
+    if osm_gdf is None or osm_gdf.empty:
+        return None
+
+    for _, row in osm_gdf.iterrows():
+        geom = row.geometry
+        if geom.geom_type == "MultiPolygon":
+            geom = max(geom.geoms, key=lambda g: g.area)
+
+        geom = (
+            gpd.GeoSeries([geom], crs="EPSG:4326")
+            .to_crs(raster_crs)
+            .iloc[0]
+        )
+
+        inter = poly.intersection(geom).area
+        union = poly.union(geom).area
+
+        if union > 0 and inter / union > 0.5:
+            return osm_height_from_tags(row)
+
+    return None
 
 
 def compute_confidence(mask, tex_var, area_px, aoi_area_px):
@@ -1952,6 +1871,45 @@ def resolve_overlaps_by_subtraction(buildings, min_frac=0.02, buffer_m=0.0):
 
     return kept
 
+# def resolve_overlaps_by_subtraction(buildings, min_frac=0.25, buffer_m=0.0, min_keep_ratio=0.85):
+#     buildings = sorted(buildings, key=lambda x: float(x[2]), reverse=True)
+#     kept = []
+
+#     for poly, h, conf in buildings:
+#         if poly is None or poly.is_empty or poly.area <= 0:
+#             continue
+
+#         cutter = None
+#         for kpoly, _, kconf in kept:
+#             inter = poly.intersection(kpoly).area
+#             denom = min(poly.area, kpoly.area) + 1e-9
+#             if (inter / denom) >= min_frac:
+#                 cutter = kpoly if cutter is None else cutter.union(kpoly)
+
+#         if cutter is not None:
+#             if buffer_m > 0:
+#                 cutter = cutter.buffer(buffer_m)
+
+#             new_poly = poly.difference(cutter)
+#             if new_poly.is_empty:
+#                 continue
+
+#             # keep biggest piece if multipoly
+#             if new_poly.geom_type == "MultiPolygon":
+#                 new_poly = max(new_poly.geoms, key=lambda g: g.area)
+
+#             # 🔒 area-loss guard (prevents half roofs)
+#             if (new_poly.area / (poly.area + 1e-9)) < min_keep_ratio:
+#                 # skip subtraction; keep original
+#                 kept.append((poly, h, conf))
+#                 continue
+
+#             poly = new_poly
+
+#         kept.append((poly, h, conf))
+
+#     return kept
+
 def split_box_long_axis(x1, y1, x2, y2, max_splits=3):
     bw = x2 - x1
     bh = y2 - y1
@@ -2089,6 +2047,59 @@ def texture_variance(img_rgb, poly, transform):
     return np.std(values)
 
 
+def overlaps_existing(poly, existing, thresh=0.5):
+    for p, _ in existing:
+        if poly.intersection(p).area / poly.area > thresh:
+            return True
+    return False
+
+
+
+
+# def get_osm_buildings(bounds):
+#     """
+#     Fetch OSM buildings with local cache fallback.
+#     """
+#     # 1️⃣ Try local cache first
+#     return None
+#     logging.info(f"osmnx version: {ox.__version__}")
+#     logging.info(f"max_query_area_size: {ox.settings.max_query_area_size}")
+#     logging.info(f"use_cache: {ox.settings.use_cache}, cache_folder: {ox.settings.cache_folder}")
+#     cached = load_osm_cache(bounds)
+#     if cached is not None:
+#         return cached
+
+#     west, south, east, north = bounds
+
+#     fallback = load_osm_cache_best_effort(bounds, raster_crs="EPSG:3857")
+#     if fallback is not None and not fallback.empty:
+#         return fallback
+#     else:
+#         logging.info(f"NO CACHE RESULT FOUND, OSM API WILL BE CALLED ")
+
+#     try:
+#         # OSMnx 2.x expects bbox=(west, south, east, north)
+#         gdf = ox.features_from_bbox(bbox=(west, south, east, north), tags={"building": True})
+#     except Exception as e:
+#         logging.warning("OSM API failed: %s", e)
+#         fallback = load_osm_cache_best_effort(bounds, raster_crs="EPSG:3857")
+#         if fallback is not None and not fallback.empty:
+#             return fallback
+#         return None
+
+#     if gdf is None or gdf.empty:
+#         logging.warning("OSM returned empty result")
+#         fallback = load_osm_cache_best_effort(bounds, raster_crs="EPSG:3857")
+#         if fallback is not None and not fallback.empty:
+#             return fallback
+#         return None
+
+#     gdf = gdf[gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
+
+#     # 2️⃣ Save to cache
+#     save_osm_cache(gdf, bounds)
+
+#     return gdf
 
 
 
@@ -2354,132 +2365,7 @@ def nms_boxes(boxes, iou_thr=0.55):
 
     return keep
 
-def merge_vertical_splits(boxes, img_w, img_h,
-                           x_overlap_thr=0.65,
-                           y_gap_thr_frac=0.20,
-                           min_conf=0.45,
-                           max_union_frac=0.65):
-    """
-    Merge boxes that are likely the SAME long rectangular building split into
-    top+bottom (or similar) by YOLO.
- 
-    This is the most common cause of "half-building" outputs when SAM is run
-    per-box, because the top box often includes ground/edge and SAM picks it.
-    """
-    if not boxes:
-       return []
- 
-    # sort by x then y to make merging stable
-    boxes = sorted(boxes, key=lambda b: (b[0], b[1], -b[4]))
- 
-    def clamp_box(b):
-        x1, y1, x2, y2, c = b
-        x1 = int(max(0, min(x1, img_w - 1)))
-        x2 = int(max(0, min(x2, img_w - 1)))
-        y1 = int(max(0, min(y1, img_h - 1)))
-        y2 = int(max(0, min(y2, img_h - 1)))
-        if x2 <= x1 + 2 or y2 <= y1 + 2:
-            return None
-        return (x1, y1, x2, y2, float(c))
- 
-    def x_overlap_ratio(a, b):
-        ax1, _, ax2, _, _ = a
-        bx1, _, bx2, _, _ = b
-        inter = max(0, min(ax2, bx2) - max(ax1, bx1))
-        denom = max(1.0, float(min(ax2 - ax1, bx2 - bx1)))
-        return inter / denom
- 
-    def y_gap(a, b):
-        # positive if separated, negative if overlapping
-        _, ay1, _, ay2, _ = a
-        _, by1, _, by2, _ = b
-        if by1 >= ay2:
-            return by1 - ay2
-        if ay1 >= by2:
-            return ay1 - by2
-        return -min(ay2, by2) + max(ay1, by1)
- 
-    def union(a, b):
-        ax1, ay1, ax2, ay2, ac = a
-        bx1, by1, bx2, by2, bc = b
-        ux1 = min(ax1, bx1)
-        uy1 = min(ay1, by1)
-        ux2 = max(ax2, bx2)
-        uy2 = max(ay2, by2)
-        uc = max(ac, bc)  # keep best confidence
-        return (ux1, uy1, ux2, uy2, uc)
- 
-    out = []
-    used = [False] * len(boxes)
- 
-    img_area = float(max(1, img_w * img_h))
- 
-    for i in range(len(boxes)):
-        if used[i]:
-            continue
-        a = clamp_box(boxes[i])
-        if a is None:
-            used[i] = True
-            continue
- 
-        ax1, ay1, ax2, ay2, ac = a
-        if ac < min_conf:
-            out.append(a)
-            used[i] = True
-            continue
- 
-        merged = a
-        merged_any = False
- 
-        for j in range(i + 1, len(boxes)):
-            if used[j]:
-                continue
-            b = clamp_box(boxes[j])
-            if b is None:
-                used[j] = True
-                continue
- 
-            bx1, by1, bx2, by2, bc = b
-            if bc < min_conf:
-                continue
- 
-            # must overlap strongly in X
-            if x_overlap_ratio(merged, b) < x_overlap_thr:
-                continue
- 
-            # must be adjacent/overlapping in Y (split top+bottom)
-            mg = y_gap(merged, b)
-            mh = max(1, min(merged[3] - merged[1], b[3] - b[1]))
-            if mg > int(y_gap_thr_frac * mh):
-                continue
- 
-            cand = union(merged, b)
- 
-            # avoid creating a huge AOI-covering box
-            cand_area = float(max(1, (cand[2] - cand[0]) * (cand[3] - cand[1])))
-            if cand_area / img_area > max_union_frac:
-                continue
- 
-            merged = cand
-            used[j] = True
-            merged_any = True
- 
-        used[i] = True
-        out.append(merged)
- 
-    return out
 
-
-def predict_mask_single_prompt(predictor, box_xyxy, yolo_conf):
-    # One-shot behavior using the same scoring codepath
-    return predict_mask_multi_prompt(
-        predictor,
-        box_xyxy,
-        yolo_conf=yolo_conf,
-        scales=(1.0,),
-        shift_frac=0.0,
-        max_union=1,
-    )
 
 def polygon_rectangularity(poly):
     mrr = poly.minimum_rotated_rectangle
@@ -2874,10 +2760,6 @@ def detect_buildings(bounds):
                             best = best_preclip
                             best_clipped_area = best_area
 
-                        # IMPORTANT: do NOT revert clipping.
-                        # Reverting re-introduces background bleed (common on long roofs / ground strips),
-                        # which later causes weird merges and "half-building" footprints.
-
                         if best_clipped_area < min_area:
                             DROP["min_area"] += 1
                             continue
@@ -3032,49 +2914,20 @@ def detect_buildings(bounds):
             H, W = img_rgb.shape[:2]
             log.info(f"YOLO Detected {len(yolo_boxes)} boxes")
 
-            # --- ALWAYS normalize FIRST (prevents tuple/dict/3-tuple crashes) ---
-            yolo_boxes = normalize_yolo_boxes(yolo_boxes)  # must output (x1,y1,x2,y2,conf)
-            log.info(f"[AOI] YOLO normalized boxes = {len(yolo_boxes)}")
-
             before0 = len(yolo_boxes)
 
-            # 1) Drop container-like mega boxes (ground blobs etc.)
+            # 1) Drop container-like boxes BEFORE NMS (critical)
             yolo_boxes = drop_container_boxes(yolo_boxes, W, H, conf_margin=0.06)
+
             if len(yolo_boxes) != before0:
                 log.info(f"[AOI] Dropped container boxes {before0} -> {len(yolo_boxes)}")
 
-            # 2) Drop edge-touching tall/skinny strips
-            before_edge = len(yolo_boxes)
-            yolo_boxes = drop_edge_strips(yolo_boxes, W, H)
-            if len(yolo_boxes) != before_edge:
-                log.info(f"[AOI] Dropped edge-strip boxes {before_edge} -> {len(yolo_boxes)}")
-
-            # 3) Merge vertical split halves BEFORE NMS (so both halves still exist)
-            before_merge = len(yolo_boxes)
-            yolo_boxes = merge_vertical_splits(
-                yolo_boxes,
-                img_w=W,
-                img_h=H,
-                y_gap_thr_frac=0.40
-            )
-            if len(yolo_boxes) != before_merge:
-                log.info(f"[AOI] merged vertical-split boxes {before_merge} -> {len(yolo_boxes)}")
-
-            # 4) Merge stacked near-duplicates (optional but fine)
-            before_stack = len(yolo_boxes)
-            yolo_boxes = merge_stacked_boxes(yolo_boxes, W, H)
-            if len(yolo_boxes) != before_stack:
-                log.info(f"[AOI] merged stacked boxes {before_stack} -> {len(yolo_boxes)}")
-
-            # 5) NMS LAST
-            before_nms = len(yolo_boxes)
+            before1 = len(yolo_boxes)
             yolo_boxes = nms_boxes(yolo_boxes, iou_thr=0.45)
-            if len(yolo_boxes) != before_nms:
-                log.info(f"[AOI] NMS reduced boxes {before_nms} -> {len(yolo_boxes)}")
 
+            if len(yolo_boxes) != before1:
+                log.info(f"[AOI] NMS reduced boxes {before1} -> {len(yolo_boxes)}")
 
-
-            
             RECALL["yolo"] += len(yolo_boxes)
 
             yolo_boxes_total_nms += len(yolo_boxes)
@@ -3126,17 +2979,8 @@ def detect_buildings(bounds):
                     continue
 
                 if len(yolo_boxes) > 1 and is_box_too_big(x1p, y1p, x2p, y2p, W, H, BIG_BOX_FRAC_AOI):
-                    dlog.warning(f"[AOI] Huge YOLO padded box -> shrink instead of reject")
-                    # shrink 8% from each side (tunable)
-                    shrink = 0.08
-                    bw = (x2p - x1p)
-                    bh = (y2p - y1p)
-                    x1p = int(x1p + shrink * bw)
-                    x2p = int(x2p - shrink * bw)
-                    y1p = int(y1p + shrink * bh)
-                    y2p = int(y2p - shrink * bh)
-                    x1p = max(0, min(W-1, x1p)); x2p = max(1, min(W, x2p))
-                    y1p = max(0, min(H-1, y1p)); y2p = max(1, min(H, y2p))
+                    dlog.warning(f"[AOI] Rejecting huge YOLO padded box frac>{BIG_BOX_FRAC_AOI}")
+                    continue
 
 
 
@@ -3165,44 +3009,14 @@ def detect_buildings(bounds):
 
                 box = np.array([x1p, y1p, x2p, y2p], dtype=np.float32)
 
-                pw = max(1, int(x2p - x1p))
-                ph = max(1, int(y2p - y1p))
-                box_frac = (pw * ph) / float(max(1, W * H))
-
-                aspect = max(pw / float(ph), ph / float(pw))
-
-                touch_border = (
-                    x1p <= 2 or y1p <= 2 or
-                    x2p >= (W - 2) or y2p >= (H - 2)
+                mask, mscore, dbg = predict_mask_multi_prompt(
+                    predictor,
+                    yolo_box_xyxy=(x1p, y1p, x2p, y2p),
+                    yolo_conf=yconf,
+                    scales=(1.00, 1.15, 1.28, 1.40),
+                    shift_frac=0.03,
+                    max_union=2
                 )
-
-                low_conf_big = (yconf < 0.35) and (box_frac > 0.18)
-
-                risky_box = (
-                    (box_frac > 0.25) or
-                    (aspect > 5.0) or
-                    touch_border or
-                    low_conf_big
-                )
-
-                
-                box_xyxy = (int(x1p), int(y1p), int(x2p), int(y2p))
-
-                if risky_box:
-                    mask_bool, score, dbg = predict_mask_multi_prompt(
-                        predictor,
-                        box_xyxy,
-                        yolo_conf=yconf,
-                        scales=(1.00, 1.15, 1.28, 1.40),
-                        shift_frac=0.03,
-                        max_union=2,
-                    )
-                else:
-                    mask_bool, score, dbg = predict_mask_single_prompt(
-                        predictor,
-                        box_xyxy,
-                        yolo_conf=yconf,
-                    )
 
                 # --- Compute min area in pixels from m² threshold ---
                 px_w = abs(transform.a)
@@ -3388,6 +3202,26 @@ def detect_buildings(bounds):
                 yolo_poly = Polygon([(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy)])
 
 
+                # --- OSM fallback only if SAM failed for this YOLO box
+                # if not sam_polys and osm is not None:
+                #     added = False
+                #     for _, row in osm.iterrows():
+                #         osm_poly = (
+                #             gpd.GeoSeries([row.geometry], crs=osm.crs)
+                #             .to_crs(raster_crs)
+                #             .iloc[0]
+                #         )
+
+                #         # Only accept OSM that intersects this YOLO bbox
+                #         if osm_poly.intersects(yolo_poly) and not overlaps_any(osm_poly, all_buildings):
+                #             all_buildings.append((osm_poly, DEFAULT_HEIGHT, 0.85))
+                #             added = True
+                #             break
+
+                #     if not added:
+                #         dlog.info("YOLO hit but no SAM/OSM geometry → skipping footprint")
+
+
                 for poly, conf in sam_polys:
                     #final_conf = min(1.0, 0.6 * conf + 0.4 * yconf)
                     if yconf > 0.9:
@@ -3396,6 +3230,20 @@ def detect_buildings(bounds):
                         final_conf = 0.6 * conf + 0.4 * yconf
 
                     all_buildings.append((poly, DEFAULT_HEIGHT, final_conf))
+
+                # If microtile fallback produced many overlapping candidates,
+                # pick the single best building footprint to avoid unions bleeding into land.
+                # if len(all_buildings) >= 3:
+                #     H, W = img_rgb.shape[:2]
+                #     aoi_b = aoi_bounds_from_transform(transform, H, W)
+
+                #     cands = [(p, c) for (p, _, c) in all_buildings]
+                #     best_poly = pick_best_building(cands, aoi_bounds=aoi_b)
+
+                #     if best_poly is not None:
+                #         all_buildings = [(best_poly, DEFAULT_HEIGHT, 0.85)]
+
+
         
         
 
@@ -3526,7 +3374,18 @@ def detect_buildings(bounds):
         for poly, _, conf in buildings:
             height = None
 
+            # 1️⃣ OSM height if available
+            #height = find_matching_osm_height(poly, osm, raster_crs)
+
+            # 2️⃣ Shadow height if SAM confident
             shadow_info = None
+
+            ## disabling height calculation for now so that we can focus on footprinting first, but after footprint height is next priority
+            
+            # if height is None and conf >= 0.75:
+            #     shadow_info = estimate_height_from_shadow(poly, img_rgb, transform, raster_crs)
+            #     if shadow_info:
+            #         height = shadow_info["height"]
 
             if height is None and conf >= 0.75:
                 shadow_info = estimate_height_with_retries(poly, img_rgb, transform, raster_crs, conf=conf, max_tries=3,log=log)
