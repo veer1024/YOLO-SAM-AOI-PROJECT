@@ -329,7 +329,8 @@ def _save_sam_debug(
         bx1, by1, bx2, by2 = dbg["best_prompt_box"]
         cv2.rectangle(overlay, (int(bx1), int(by1)), (int(bx2), int(by2)), (0, 0, 255), 2)
 
-    cv2.imwrite(overlay_path, overlay)
+    #cv2.imwrite(overlay_path, overlay)
+    cv2.imwrite(overlay_path, cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
 
     meta = {
         "run_id": run_id,
@@ -2909,6 +2910,8 @@ def detect_buildings(bounds):
                                 log.warning("[AOI] fallback microtiles returned 0 → keeping original YOLO boxes")
                                 yolo_boxes = orig_yolo_boxes
 
+            
+            H, W = img_rgb.shape[:2]
             log.info(f"YOLO Detected {len(yolo_boxes)} boxes")
 
             before0 = len(yolo_boxes)
@@ -2928,8 +2931,6 @@ def detect_buildings(bounds):
             RECALL["yolo"] += len(yolo_boxes)
 
             yolo_boxes_total_nms += len(yolo_boxes)
-            if len(yolo_boxes) != before:
-                log.info(f"[AOI] NMS reduced boxes {before} -> {len(yolo_boxes)}")
 
             for box_idx, (x1, y1, x2, y2, yconf) in enumerate(yolo_boxes):
 
