@@ -28998,5 +28998,68 @@
       89.54003870487215,
       28.876409629308323
     ]
+  },
+  {
+    "id": "ed1799d3-0d90-47a3-9a6c-6733411be2d3",
+    "type": "not_a_building",
+    "timestamp": "2026-02-01T11:35:17.127885+00:00",
+    "image": "ml/feedback/not_a_building/images/ed1799d3-0d90-47a3-9a6c-6733411be2d3.png",
+    "mask": "ml/feedback/not_a_building/masks/ed1799d3-0d90-47a3-9a6c-6733411be2d3.png",
+    "bbox_xyxy": [
+      5,
+      254,
+      22,
+      574
+    ],
+    "mask_coverage": 0.008004188537597656,
+    "mask_touches_border": true,
+    "aoi_bounds": [
+      89.53573107719423,
+      28.873689784797406,
+      89.54006552696228,
+      28.87641432673294
+    ]
+  },
+  {
+    "id": "17feb03b-bf88-446f-94dd-65cf298dab0f",
+    "type": "not_a_building",
+    "timestamp": "2026-02-01T11:35:32.148926+00:00",
+    "image": "ml/feedback/not_a_building/images/17feb03b-bf88-446f-94dd-65cf298dab0f.png",
+    "mask": "ml/feedback/not_a_building/masks/17feb03b-bf88-446f-94dd-65cf298dab0f.png",
+    "bbox_xyxy": [
+      265,
+      371,
+      302,
+      404
+    ],
+    "mask_coverage": 0.0014276504516601562,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.53573107719423,
+      28.873689784797406,
+      89.54006552696228,
+      28.87641432673294
+    ]
+  },
+  {
+    "id": "77ac9110-4317-4b26-94c2-03bea7a29ce6",
+    "type": "wrong_geometry",
+    "timestamp": "2026-02-01T16:29:37.585275+00:00",
+    "image": "ml/feedback/wrong_geometry/images/77ac9110-4317-4b26-94c2-03bea7a29ce6.png",
+    "mask": "ml/feedback/wrong_geometry/masks/77ac9110-4317-4b26-94c2-03bea7a29ce6.png",
+    "bbox_xyxy": [
+      172,
+      295,
+      892,
+      774
+    ],
+    "mask_coverage": 0.33994007110595703,
+    "mask_touches_border": false,
+    "aoi_bounds": [
+      89.53576594591142,
+      28.875949280666262,
+      89.53691795468332,
+      28.87635913198036
+    ]
   }
 ]

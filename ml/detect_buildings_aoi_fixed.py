@@ -7,6 +7,7 @@ import numpy as np
 import rasterio
 import geopandas as gpd
 import torch
+import osmnx as ox
 import math
 import pandas as pd
 from shapely.geometry import Polygon, MultiPolygon
@@ -50,6 +51,12 @@ if not any(isinstance(h, logging.StreamHandler) for h in BOOT_LOG.handlers):
 TMP_DIR = "ml/tmp"
 os.makedirs(TMP_DIR, exist_ok=True)
 
+### OSM CAHCING CONFIG
+
+OSM_CACHE_DIR = "ml/osm_cache_local"
+OSM_CACHE_INDEX = os.path.join(OSM_CACHE_DIR, "osm_cache_index.geojson")
+os.makedirs(OSM_CACHE_DIR, exist_ok=True)
+
 
 # --- Drop mega / strip boxes on tiles ---
 MEGA_AREA_THR_TILE   = 0.45   # drop if padded box >45% of tile area
@@ -62,15 +69,29 @@ MEGA_KEEP_CONF = 0.92
 
 ### MEAGBOX AOI
 
-MEGA_AREA_THR_AOI  = 0.60
-MEGA_SIDE_THR_AOI  = 0.95
-STRIP_SIDE_THR_AOI = 0.90
-STRIP_OTHER_THR_AOI = 0.20
+# MEGA_AREA_THR_AOI  = 0.60
+# MEGA_SIDE_THR_AOI  = 0.95
+# STRIP_SIDE_THR_AOI = 0.90
+# STRIP_OTHER_THR_AOI = 0.20
+# MEGA_KEEP_CONF_AOI = 0.95
+
+
+# AOI: be much less aggressive. Keep mega boxes and let SAM decide.
+MEGA_AREA_THR_AOI = 0.85        # only truly huge boxes
+MEGA_SIDE_THR_AOI = 0.98
+
+# Only treat "strip" as extreme thin bands
+STRIP_SIDE_THR_AOI = 0.95
+STRIP_OTHER_THR_AOI = 0.12
+
+# If you still want a keep conf, make it achievable
+MEGA_KEEP_CONF_AOI = 0.90
+
 
 STRIP_SIDE_THR_TILE = 0.92
 STRIP_OTHER_THR_TILE = 0.22
 STRIP_OTHER_MAX_AOI = 0.55
-MEGA_KEEP_CONF_AOI = 0.95
+
 
 MIN_MASK_AREA_M2 = 7.0  # tune: 5–20 m² depending on smallest buildings you want
 # --------------------------------------------------
@@ -131,7 +152,7 @@ sam.to(device=device, dtype=torch.float32)
 sam.eval()
 
 #decoder_ckpt = "ml/sam_training/checkpoints/sam_decoder_finetuned.pth.epoch12.pth"
-decoder_ckpt="SAM_TRAINED_MODEL/sam_decoder_finetuned.pth.epoch15.pth"
+decoder_ckpt="SAM_TRAINED_MODEL/sam_decoder_finetuned.pth.epoch23.pth"
 sam.mask_decoder.load_state_dict(torch.load(decoder_ckpt, map_location=device))
 BOOT_LOG.info("Fine-tuned SAM decoder loaded")
 
@@ -250,7 +271,12 @@ mask_generator_crop = SamAutomaticMaskGenerator(
     min_mask_region_area=120
 )
 
-
+# --------------------------------------------------
+# OSM SETTINGS
+# --------------------------------------------------
+ox.settings.use_cache = True
+ox.settings.cache_folder = "osm_cache"
+ox.settings.log_console = False
 
 # --------------------------------------------------
 # HELPERS
@@ -854,6 +880,197 @@ def fuse_boxes_conservative(boxes, img_w, img_h):
 
     return fused
 
+def normalize_yolo_boxes(boxes):
+    """
+    Normalize YOLO boxes into a single canonical format:
+      (x1, y1, x2, y2, conf)
+
+    Supports:
+      - dict: {"xyxy":[x1,y1,x2,y2], "conf":0.7} (or "confidence")
+      - tuple/list length 5: (x1,y1,x2,y2,conf)
+      - tuple/list length 6: (x1,y1,x2,y2,conf,cls)
+      - tuple/list length 3: ((x1,y1,x2,y2), conf, cls)   <-- your crash case
+    """
+    out = []
+    if not boxes:
+        return out
+
+    for b in boxes:
+        # dict case
+        if isinstance(b, dict):
+            xyxy = b.get("xyxy") or b.get("bbox") or b.get("box") or b.get("xyxyc")
+            if xyxy is None:
+                continue
+            x1, y1, x2, y2 = xyxy
+            conf = float(b.get("conf", b.get("confidence", 1.0)))
+            out.append((float(x1), float(y1), float(x2), float(y2), conf))
+            continue
+
+        # list/tuple case
+        if isinstance(b, (list, tuple)):
+            if len(b) == 5:
+                x1, y1, x2, y2, conf = b
+                out.append((float(x1), float(y1), float(x2), float(y2), float(conf)))
+                continue
+
+            if len(b) == 6:
+                x1, y1, x2, y2, conf, _cls = b
+                out.append((float(x1), float(y1), float(x2), float(y2), float(conf)))
+                continue
+
+            # CRITICAL: your crash format
+            if len(b) == 3 and isinstance(b[0], (list, tuple)) and len(b[0]) == 4:
+                (x1, y1, x2, y2), conf, _cls = b
+                out.append((float(x1), float(y1), float(x2), float(y2), float(conf)))
+                continue
+
+    return out
+
+
+def _box_xyxy(b):
+    # tuple: (x1,y1,x2,y2,conf) or (x1,y1,x2,y2)
+    if isinstance(b, (tuple, list)):
+        return float(b[0]), float(b[1]), float(b[2]), float(b[3])
+    # dict: {"xyxy":[x1,y1,x2,y2], "conf":...}
+    x1, y1, x2, y2 = b["xyxy"]
+    return float(x1), float(y1), float(x2), float(y2)
+
+def _box_conf(b, default=1.0):
+    if isinstance(b, (tuple, list)):
+        return float(b[4]) if len(b) >= 5 else default
+    return float(b.get("conf", default))
+
+def _make_box_like(orig, x1, y1, x2, y2, conf):
+    # preserve original type (tuple in your pipeline)
+    if isinstance(orig, (tuple, list)):
+        return (int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2)), float(conf))
+    return {"xyxy": [int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2))], "conf": float(conf)}
+
+
+def merge_stacked_boxes(boxes, img_w, img_h,
+                        x_iou_min=0.35,
+                        y_overlap_min=0.05,
+                        gap_max_frac=0.06):
+    """
+    Merge boxes that are vertically stacked parts of the same building.
+    Input can be:
+      - tuples: (x1,y1,x2,y2,conf)
+      - dicts: {"xyxy":(x1,y1,x2,y2), "conf":...}
+    Output: list of tuples (x1,y1,x2,y2,conf)
+    """
+
+    if not boxes:
+        return boxes
+
+    # normalize to tuples
+    norm = []
+    for b in boxes:
+        if isinstance(b, dict):
+            x1, y1, x2, y2 = b["xyxy"]
+            conf = float(b.get("conf", 1.0))
+        else:
+            x1, y1, x2, y2, conf = b
+        norm.append((int(x1), int(y1), int(x2), int(y2), float(conf)))
+
+    boxes = norm
+
+    def x_iou(a, b):
+        ax1, ay1, ax2, ay2, _ = a
+        bx1, by1, bx2, by2, _ = b
+        inter = max(0, min(ax2, bx2) - max(ax1, bx1))
+        ua = (ax2 - ax1) + (bx2 - bx1) - inter
+        return inter / max(1, ua)
+
+    merged = []
+    used = [False] * len(boxes)
+
+    for i, a in enumerate(boxes):
+        if used[i]:
+            continue
+
+        ax1, ay1, ax2, ay2, ac = a
+        cur = a
+        used[i] = True
+
+        changed = True
+        while changed:
+            changed = False
+            cx1, cy1, cx2, cy2, cc = cur
+
+            for j, b in enumerate(boxes):
+                if used[j]:
+                    continue
+
+                bx1, by1, bx2, by2, bc = b
+
+                # must align reasonably in X
+                if x_iou(cur, b) < x_iou_min:
+                    continue
+
+                # compute vertical relationship
+                top = min(cy2, by2) - max(cy1, by1)  # overlap amount
+                top_frac = top / max(1, min(cy2 - cy1, by2 - by1))
+
+                gap = max(by1 - cy2, cy1 - by2)  # positive if separated
+                gap_frac = gap / max(1, img_h)
+
+                # stacked if either slightly overlapping OR small gap
+                if top_frac >= y_overlap_min or gap_frac <= gap_max_frac:
+                    nx1 = min(cx1, bx1)
+                    ny1 = min(cy1, by1)
+                    nx2 = max(cx2, bx2)
+                    ny2 = max(cy2, by2)
+                    nc = max(cc, bc)  # keep strongest conf
+                    cur = (nx1, ny1, nx2, ny2, nc)
+                    used[j] = True
+                    changed = True
+
+        merged.append(cur)
+
+    return merged
+
+def to_xyxy_conf_list(boxes):
+    """
+    Convert any YOLO box formats to canonical list of 5-tuples:
+        (x1, y1, x2, y2, conf)
+    Supported inputs:
+      - dict: {"xyxy":[x1,y1,x2,y2], "conf":c} or {"xyxy_int":..., "score":...}
+      - tuple/list: (x1,y1,x2,y2,conf)
+      - tuple/list: ((x1,y1,x2,y2), conf, cls)  <-- your "expected 5 got 3" case
+      - tuple/list: (x1,y1,x2,y2)  (conf assumed 1.0)
+    """
+    out = []
+    for b in (boxes or []):
+        # dict format
+        if isinstance(b, dict):
+            xyxy = b.get("xyxy") or b.get("xyxy_int") or b.get("box")
+            if xyxy is None or len(xyxy) != 4:
+                continue
+            c = b.get("conf", b.get("score", b.get("confidence", 1.0)))
+            out.append((float(xyxy[0]), float(xyxy[1]), float(xyxy[2]), float(xyxy[3]), float(c)))
+            continue
+
+        # tuple/list formats
+        if isinstance(b, (tuple, list)):
+            if len(b) == 5:
+                x1, y1, x2, y2, c = b
+                out.append((float(x1), float(y1), float(x2), float(y2), float(c)))
+                continue
+
+            if len(b) == 4:
+                x1, y1, x2, y2 = b
+                out.append((float(x1), float(y1), float(x2), float(y2), 1.0))
+                continue
+
+            # IMPORTANT: handles your error "expected 5 got 3"
+            # example: ((x1,y1,x2,y2), conf, cls)
+            if len(b) == 3 and isinstance(b[0], (tuple, list)) and len(b[0]) == 4:
+                (x1, y1, x2, y2), c, _cls = b
+                out.append((float(x1), float(y1), float(x2), float(y2), float(c)))
+                continue
+
+    return out
+
 
 def is_mega_or_strip_box(x1p,y1p,x2p,y2p, tile_w,tile_h, yconf):
     bw = max(1, x2p-x1p); bh = max(1, y2p-y1p)
@@ -863,8 +1080,9 @@ def is_mega_or_strip_box(x1p,y1p,x2p,y2p, tile_w,tile_h, yconf):
 
     mega = (area_frac >= MEGA_AREA_THR_TILE) or (w_frac >= MEGA_SIDE_THR_TILE) or (h_frac >= MEGA_SIDE_THR_TILE)
 
-    strip = (w_frac >= STRIP_SIDE_THR_AOI and h_frac <= STRIP_OTHER_THR_AOI) or (
-        h_frac >= STRIP_SIDE_THR_AOI and w_frac <= STRIP_OTHER_THR_AOI
+    strip = (
+        (w_frac >= STRIP_SIDE_THR_TILE and h_frac <= STRIP_OTHER_THR_TILE) or
+        (h_frac >= STRIP_SIDE_THR_TILE and w_frac <= STRIP_OTHER_THR_TILE)
     )
 
     if (mega or strip) and (yconf < MEGA_KEEP_CONF):
@@ -899,6 +1117,27 @@ def looks_like_container_box(x1, y1, x2, y2, W, H):
 
     return False
 
+def drop_edge_strips(boxes, W, H, min_touch=2, max_w_frac=0.25, min_h_frac=0.75, conf_max=0.25):
+    out = []
+    for b in boxes:
+        x1,y1,x2,y2 = _box_xyxy(b)
+        conf = _box_conf(b)
+        bw, bh = (x2-x1), (y2-y1)
+
+        touches = 0
+        if x1 <= 1: touches += 1
+        if y1 <= 1: touches += 1
+        if x2 >= W-2: touches += 1
+        if y2 >= H-2: touches += 1
+
+        if (touches >= min_touch and
+            (bw / max(W,1)) <= max_w_frac and
+            (bh / max(H,1)) >= min_h_frac and
+            conf <= conf_max):
+            continue
+
+        out.append(b)
+    return out
 
 def drop_container_boxes(boxes, W, H, conf_margin=0.06):
     """
@@ -947,32 +1186,54 @@ def drop_container_boxes(boxes, W, H, conf_margin=0.06):
     return [b for k, b in zip(keep, boxes) if k]
 
 
-def is_mega_or_strip_box_aoi(x1p,y1p,x2p,y2p, W,H, yconf):
-    bw = max(1, x2p-x1p); bh = max(1, y2p-y1p)
-    area_frac = (bw*bh) / max(1, W*H)
-    w_frac = bw / max(1, W)
-    h_frac = bh / max(1, H)
+# def is_mega_or_strip_box_aoi(x1p,y1p,x2p,y2p, W,H, yconf):
+#     bw = max(1, x2p-x1p); bh = max(1, y2p-y1p)
+#     area_frac = (bw*bh) / max(1, W*H)
+#     w_frac = bw / max(1, W)
+#     h_frac = bh / max(1, H)
 
 
-    aspect = max(bw / bh, bh / bw)
+#     aspect = max(bw / bh, bh / bw)
 
-    # --- NEW: container-box heuristic (your failing case) ---
-    # If a box covers a large chunk of AOI, it is almost always a "container".
-    if area_frac >= 0.40:
+#     # --- NEW: container-box heuristic (your failing case) ---
+#     # If a box covers a large chunk of AOI, it is almost always a "container".
+#     if area_frac >= 0.40:
+#         return True
+#     if (w_frac >= 0.75 and h_frac >= 0.35 and aspect >= 1.6 and area_frac >= 0.25):
+#         return True
+
+#     mega = (area_frac >= MEGA_AREA_THR_AOI) or (w_frac >= MEGA_SIDE_THR_AOI) or (h_frac >= MEGA_SIDE_THR_AOI)
+
+#     # strip = ((w_frac >= STRIP_SIDE_THR_AOI and h_frac >= STRIP_OTHER_MAX_AOI) or
+#     #          (h_frac >= STRIP_SIDE_THR_AOI and w_frac >= STRIP_OTHER_MAX_AOI))
+
+#     strip = ((w_frac >= STRIP_SIDE_THR_AOI and h_frac <= STRIP_OTHER_MAX_AOI) or
+#          (h_frac >= STRIP_SIDE_THR_AOI and w_frac <= STRIP_OTHER_MAX_AOI))
+
+#     if (mega or strip) and (yconf < MEGA_KEEP_CONF_AOI):
+#         return True
+#     return False
+
+
+def is_mega_or_strip_box_aoi(x1, y1, x2, y2, W, H, conf):
+    bw = max(1, (x2 - x1))
+    bh = max(1, (y2 - y1))
+    w_frac = bw / float(W)
+    h_frac = bh / float(H)
+    area_frac = (bw * bh) / float(W * H)
+
+    # STRIP: very thin bands only (these are usually roads/edges/tiling artifacts)
+    is_strip = ((w_frac >= STRIP_SIDE_THR_AOI and h_frac <= STRIP_OTHER_THR_AOI) or
+                (h_frac >= STRIP_SIDE_THR_AOI and w_frac <= STRIP_OTHER_THR_AOI))
+    if is_strip and conf < 0.85:
         return True
-    if (w_frac >= 0.75 and h_frac >= 0.35 and aspect >= 1.6 and area_frac >= 0.25):
+
+    # MEGA: do NOT drop in AOI unless extremely low-confidence.
+    # Let SAM handle it; later you already have container/NMS/merge logic.
+    is_mega = (area_frac >= MEGA_AREA_THR_AOI) or (w_frac >= MEGA_SIDE_THR_AOI) or (h_frac >= MEGA_SIDE_THR_AOI)
+    if is_mega and conf < 0.15:
         return True
 
-    mega = (area_frac >= MEGA_AREA_THR_AOI) or (w_frac >= MEGA_SIDE_THR_AOI) or (h_frac >= MEGA_SIDE_THR_AOI)
-
-    # strip = ((w_frac >= STRIP_SIDE_THR_AOI and h_frac >= STRIP_OTHER_MAX_AOI) or
-    #          (h_frac >= STRIP_SIDE_THR_AOI and w_frac >= STRIP_OTHER_MAX_AOI))
-
-    strip = ((w_frac >= STRIP_SIDE_THR_AOI and h_frac <= STRIP_OTHER_MAX_AOI) or
-         (h_frac >= STRIP_SIDE_THR_AOI and w_frac <= STRIP_OTHER_MAX_AOI))
-
-    if (mega or strip) and (yconf < MEGA_KEEP_CONF_AOI):
-        return True
     return False
 
 
@@ -993,7 +1254,7 @@ def world_box_polygon(transform, x1, y1, x2, y2):
     miny = min(y1w, y2w); maxy = max(y1w, y2w)
     return Polygon([(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy)])
 
-def clip_gdf_to_aoi_4326(gdf_4326, bounds_4326):
+def clip_gdf_to_aoi_4326(gdf_4326, aoi_bounds_4326_4326):
     """
     gdf_4326: GeoDataFrame in EPSG:4326
     bounds_4326: (west,south,east,north)
@@ -1043,6 +1304,11 @@ SHADOW_RETRY_LEVELS = [
     dict(seed_dilate=4, open_iter=0, close_iter=1, min_area=60,
          perp_margin_min=14, perp_margin_max=36, min_shadow_rays=12),
 ]
+
+
+
+
+
 
 
 def directional_halfplane_filter(shadow_mask, building_mask, dx, dy):
@@ -1525,6 +1791,9 @@ def is_box_too_big(x1p, y1p, x2p, y2p, img_w, img_h, frac_thresh):
     return (box_area / img_area) > frac_thresh
 
 
+
+
+
 def compute_confidence(mask, tex_var, area_px, aoi_area_px):
     """
     Returns confidence in range [0,1]
@@ -1684,8 +1953,6 @@ def resolve_overlaps_by_subtraction(buildings, min_frac=0.02, buffer_m=0.0):
 
     return kept
 
-
-
 def split_box_long_axis(x1, y1, x2, y2, max_splits=3):
     bw = x2 - x1
     bh = y2 - y1
@@ -1823,11 +2090,6 @@ def texture_variance(img_rgb, poly, transform):
     return np.std(values)
 
 
-def overlaps_existing(poly, existing, thresh=0.5):
-    for p, _ in existing:
-        if poly.intersection(p).area / poly.area > thresh:
-            return True
-    return False
 
 
 
@@ -1906,31 +2168,6 @@ def mask_to_polygon(mask, transform, offx=0, offy=0, min_contour_area_px=30):
     return None
 
 
-
-def _pixel_box_to_world_poly(transform, x1, y1, x2, y2):
-    """Convert pixel-aligned box (x1,y1,x2,y2) in the same raster space as `transform` into a shapely Polygon in world coords."""
-    try:
-        # Affine supports multiplication with (col,row) -> (x,y)
-        from shapely.geometry import Polygon
-        p00 = transform * (float(x1), float(y1))
-        p10 = transform * (float(x2), float(y1))
-        p11 = transform * (float(x2), float(y2))
-        p01 = transform * (float(x1), float(y2))
-        return Polygon([p00, p10, p11, p01, p00])
-    except Exception:
-        return None
-
-def _safe_morph_close(mask_bool, k=3, iters=1):
-    """Small closing to fill tiny roof gaps without growing too much."""
-    try:
-        import cv2
-        import numpy as np
-        m = (mask_bool.astype(np.uint8) * 255)
-        kernel = np.ones((k, k), np.uint8)
-        m2 = cv2.morphologyEx(m, cv2.MORPH_CLOSE, kernel, iterations=iters)
-        return (m2 > 127)
-    except Exception:
-        return mask_bool
 def is_airport_building(poly, relaxed=False):
     hull = poly.convex_hull
     solidity = poly.area / max(hull.area, 1e-6)
@@ -2028,43 +2265,17 @@ def split_box_grid(x1, y1, x2, y2, nx=2, ny=2):
 def crop_transform(full_transform, x_off, y_off):
     return full_transform * Affine.translation(x_off, y_off)
 
-# def nms_boxes(boxes, iou_thr=0.5):
-#     """
-#     boxes: [(x1,y1,x2,y2,conf), ...]
-#     returns filtered boxes (same format)
-#     """
-#     if not boxes:
-#         return []
+def is_risky_box(x1, y1, x2, y2, conf, W, H):
+    w = max(1, x2 - x1)
+    h = max(1, y2 - y1)
 
-#     boxes = sorted(boxes, key=lambda b: b[4], reverse=True)
+    box_frac = (w * h) / float(W * H)
+    aspect = max(w / float(h), h / float(w))
 
-#     def iou(a, b):
-#         ax1, ay1, ax2, ay2 = a
-#         bx1, by1, bx2, by2 = b
-#         inter_x1 = max(ax1, bx1)
-#         inter_y1 = max(ay1, by1)
-#         inter_x2 = min(ax2, bx2)
-#         inter_y2 = min(ay2, by2)
-#         iw = max(0, inter_x2 - inter_x1)
-#         ih = max(0, inter_y2 - inter_y1)
-#         inter = iw * ih
-#         area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
-#         area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
-#         union = area_a + area_b - inter
-#         return inter / union if union > 0 else 0.0
+    touches_border = (x1 <= 0) or (y1 <= 0) or (x2 >= W - 1) or (y2 >= H - 1)
+    low_conf_big = (conf < 0.20) and (box_frac > 0.18)
 
-#     keep = []
-#     for b in boxes:
-#         bx1, by1, bx2, by2, bc = b
-#         ok = True
-#         for k in keep:
-#             kx1, ky1, kx2, ky2, kc = k
-#             if iou((bx1, by1, bx2, by2), (kx1, ky1, kx2, ky2)) > iou_thr:
-#                 ok = False
-#                 break
-#         if ok:
-#             keep.append(b)
-#     return keep
+    return (box_frac > 0.25) or (aspect > 5.0) or touches_border or low_conf_big
 
 
 def nms_boxes(boxes, iou_thr=0.55):
@@ -2118,7 +2329,132 @@ def nms_boxes(boxes, iou_thr=0.55):
 
     return keep
 
+def merge_vertical_splits(boxes, img_w, img_h,
+                           x_overlap_thr=0.65,
+                           y_gap_thr_frac=0.20,
+                           min_conf=0.45,
+                           max_union_frac=0.65):
+    """
+    Merge boxes that are likely the SAME long rectangular building split into
+    top+bottom (or similar) by YOLO.
+ 
+    This is the most common cause of "half-building" outputs when SAM is run
+    per-box, because the top box often includes ground/edge and SAM picks it.
+    """
+    if not boxes:
+       return []
+ 
+    # sort by x then y to make merging stable
+    boxes = sorted(boxes, key=lambda b: (b[0], b[1], -b[4]))
+ 
+    def clamp_box(b):
+        x1, y1, x2, y2, c = b
+        x1 = int(max(0, min(x1, img_w - 1)))
+        x2 = int(max(0, min(x2, img_w - 1)))
+        y1 = int(max(0, min(y1, img_h - 1)))
+        y2 = int(max(0, min(y2, img_h - 1)))
+        if x2 <= x1 + 2 or y2 <= y1 + 2:
+            return None
+        return (x1, y1, x2, y2, float(c))
+ 
+    def x_overlap_ratio(a, b):
+        ax1, _, ax2, _, _ = a
+        bx1, _, bx2, _, _ = b
+        inter = max(0, min(ax2, bx2) - max(ax1, bx1))
+        denom = max(1.0, float(min(ax2 - ax1, bx2 - bx1)))
+        return inter / denom
+ 
+    def y_gap(a, b):
+        # positive if separated, negative if overlapping
+        _, ay1, _, ay2, _ = a
+        _, by1, _, by2, _ = b
+        if by1 >= ay2:
+            return by1 - ay2
+        if ay1 >= by2:
+            return ay1 - by2
+        return -min(ay2, by2) + max(ay1, by1)
+ 
+    def union(a, b):
+        ax1, ay1, ax2, ay2, ac = a
+        bx1, by1, bx2, by2, bc = b
+        ux1 = min(ax1, bx1)
+        uy1 = min(ay1, by1)
+        ux2 = max(ax2, bx2)
+        uy2 = max(ay2, by2)
+        uc = max(ac, bc)  # keep best confidence
+        return (ux1, uy1, ux2, uy2, uc)
+ 
+    out = []
+    used = [False] * len(boxes)
+ 
+    img_area = float(max(1, img_w * img_h))
+ 
+    for i in range(len(boxes)):
+        if used[i]:
+            continue
+        a = clamp_box(boxes[i])
+        if a is None:
+            used[i] = True
+            continue
+ 
+        ax1, ay1, ax2, ay2, ac = a
+        if ac < min_conf:
+            out.append(a)
+            used[i] = True
+            continue
+ 
+        merged = a
+        merged_any = False
+ 
+        for j in range(i + 1, len(boxes)):
+            if used[j]:
+                continue
+            b = clamp_box(boxes[j])
+            if b is None:
+                used[j] = True
+                continue
+ 
+            bx1, by1, bx2, by2, bc = b
+            if bc < min_conf:
+                continue
+ 
+            # must overlap strongly in X
+            if x_overlap_ratio(merged, b) < x_overlap_thr:
+                continue
+ 
+            # must be adjacent/overlapping in Y (split top+bottom)
+            mg = y_gap(merged, b)
+            mh = max(1, min(merged[3] - merged[1], b[3] - b[1]))
+            if mg > int(y_gap_thr_frac * mh):
+                continue
+ 
+            cand = union(merged, b)
+ 
+            # avoid creating a huge AOI-covering box
+            cand_area = float(max(1, (cand[2] - cand[0]) * (cand[3] - cand[1])))
+            if cand_area / img_area > max_union_frac:
+                continue
+ 
+            merged = cand
+            used[j] = True
+            merged_any = True
+ 
+        used[i] = True
+        out.append(merged)
+ 
+    return out
 
+
+def predict_mask_single_prompt(predictor, box_xyxy, yolo_conf):
+    # One-shot behavior using the same scoring codepath
+    return predict_mask_multi_prompt(
+        predictor,
+        box_xyxy,
+        yolo_conf=yolo_conf,
+        scales=(1.0,),
+        shift_frac=0.0,
+        max_union=1,
+    )
 
 def polygon_rectangularity(poly):
     mrr = poly.minimum_rotated_rectangle
@@ -2264,6 +2600,7 @@ def detect_buildings(bounds):
 
     # Stabilize float jitter (important if frontend sends slightly different bounds)
     bounds = tuple(round(float(b), 7) for b in bounds)
+    aoi_bounds_4326 = bounds  # keep original AOI bounds; don't overwrite later
 
     run_id = uuid.uuid4().hex
     setup_logging(run_id)
@@ -2300,6 +2637,8 @@ def detect_buildings(bounds):
         log.info("AOI image size=%sx%s pixel_size_m=%.4f crs=%s", w, h, abs(transform.a), str(raster_crs))
         log.info("AOI tif=%s", aoi_path)
 
+        #osm = get_osm_buildings(bounds)
+        osm = None
         tiles = []
 
         if aoi_area_m2 > MIN_TILING_AREA_M2:
@@ -2492,8 +2831,6 @@ def detect_buildings(bounds):
                         mask_clip[y1c:y2c+1, x1c:x2c+1] = 1
 
                         best = best & mask_clip
-                        # Fill tiny roof gaps (preserve roof completeness) but keep strictly within clip box
-                        best = _safe_morph_close(best.astype(bool), k=3, iters=2) & mask_clip.astype(bool)
                         best_clipped_area = int(best.sum())
 
                         _save_sam_debug(
@@ -2513,17 +2850,15 @@ def detect_buildings(bounds):
                             best = best_preclip
                             best_clipped_area = best_area
 
+                        # IMPORTANT: do NOT revert clipping.
+                        # Reverting re-introduces background bleed (common on long roofs / ground strips),
+                        # which later causes weird merges and "half-building" footprints.
+
                         if best_clipped_area < min_area:
                             DROP["min_area"] += 1
                             continue
 
-                        clip_poly_world = _pixel_box_to_world_poly(t_transform, x1c, y1c, x2c, y2c)
                         poly = mask_to_polygon({"segmentation": best}, t_transform)
-                        if clip_poly_world is not None:
-                            try:
-                                poly = poly.intersection(clip_poly_world)
-                            except Exception:
-                                pass
                         if poly is None:
                             DROP["poly_none"] += 1
                             continue
@@ -2670,23 +3005,53 @@ def detect_buildings(bounds):
                                 yolo_boxes = orig_yolo_boxes
 
             
+            # YOLO post-process (AOI non-tile branch)
             H, W = img_rgb.shape[:2]
             log.info(f"YOLO Detected {len(yolo_boxes)} boxes")
 
+            # 0) Normalize to (x1,y1,x2,y2,conf)
+            yolo_boxes = normalize_yolo_boxes(yolo_boxes)
+            log.info(f"[AOI] YOLO normalized boxes = {len(yolo_boxes)}")
+
+            # 1) Drop container-like boxes (big land covers building)
             before0 = len(yolo_boxes)
-
-            # 1) Drop container-like boxes BEFORE NMS (critical)
             yolo_boxes = drop_container_boxes(yolo_boxes, W, H, conf_margin=0.06)
-
             if len(yolo_boxes) != before0:
                 log.info(f"[AOI] Dropped container boxes {before0} -> {len(yolo_boxes)}")
 
-            before1 = len(yolo_boxes)
+            # 2) Drop edge-touching tall/skinny junk boxes
+            before_edge = len(yolo_boxes)
+            yolo_boxes = drop_edge_strips(yolo_boxes, W, H)
+            if len(yolo_boxes) != before_edge:
+                log.info(f"[AOI] Dropped edge-strip boxes {before_edge} -> {len(yolo_boxes)}")
+
+            # 3) Merge vertical split halves (top+bottom roofs) BEFORE NMS
+            before_vs = len(yolo_boxes)
+            yolo_boxes = merge_vertical_splits(
+                yolo_boxes,
+                img_w=W,
+                img_h=H,
+                y_gap_thr_frac=0.40
+            )
+            if len(yolo_boxes) != before_vs:
+                log.info(f"[AOI] merged vertical-split boxes {before_vs} -> {len(yolo_boxes)}")
+
+            # 4) Merge near-duplicate overlaps
+            before_ms = len(yolo_boxes)
+            yolo_boxes = merge_stacked_boxes(yolo_boxes, W, H)
+            if len(yolo_boxes) != before_ms:
+                log.info(f"[AOI] merged stacked boxes {before_ms} -> {len(yolo_boxes)}")
+
+            # 5) NMS LAST
+            before_nms = len(yolo_boxes)
             yolo_boxes = nms_boxes(yolo_boxes, iou_thr=0.45)
+            if len(yolo_boxes) != before_nms:
+                log.info(f"[AOI] NMS reduced boxes {before_nms} -> {len(yolo_boxes)}")
 
-            if len(yolo_boxes) != before1:
-                log.info(f"[AOI] NMS reduced boxes {before1} -> {len(yolo_boxes)}")
 
+
+
+            
             RECALL["yolo"] += len(yolo_boxes)
 
             yolo_boxes_total_nms += len(yolo_boxes)
@@ -2738,8 +3103,17 @@ def detect_buildings(bounds):
                     continue
 
                 if len(yolo_boxes) > 1 and is_box_too_big(x1p, y1p, x2p, y2p, W, H, BIG_BOX_FRAC_AOI):
-                    dlog.warning(f"[AOI] Rejecting huge YOLO padded box frac>{BIG_BOX_FRAC_AOI}")
-                    continue
+                    dlog.warning(f"[AOI] Huge YOLO padded box -> shrink instead of reject")
+                    # shrink 8% from each side (tunable)
+                    shrink = 0.08
+                    bw = (x2p - x1p)
+                    bh = (y2p - y1p)
+                    x1p = int(x1p + shrink * bw)
+                    x2p = int(x2p - shrink * bw)
+                    y1p = int(y1p + shrink * bh)
+                    y2p = int(y2p - shrink * bh)
+                    x1p = max(0, min(W-1, x1p)); x2p = max(1, min(W, x2p))
+                    y1p = max(0, min(H-1, y1p)); y2p = max(1, min(H, y2p))
 
 
 
@@ -2748,7 +3122,7 @@ def detect_buildings(bounds):
 
                 dlog.info(
                     f"[AOI] YOLO padded: x1p={x1p}, y1p={y1p}, x2p={x2p}, y2p={y2p}, "
-                    f"pw={pbw}, ph={pbh}, pad={PAD}"
+                    f"pw={pbw}, ph={pbh}, padx={padx} , pady={pady}"
                 )
 
 
@@ -2768,14 +3142,32 @@ def detect_buildings(bounds):
 
                 box = np.array([x1p, y1p, x2p, y2p], dtype=np.float32)
 
-                mask, mscore, dbg = predict_mask_multi_prompt(
-                    predictor,
-                    yolo_box_xyxy=(x1p, y1p, x2p, y2p),
-                    yolo_conf=yconf,
-                    scales=(1.00, 1.15, 1.28, 1.40),
-                    shift_frac=0.03,
-                    max_union=2
-                )
+                # ---------------------------
+                # Decide if this box is "risky"
+                # ---------------------------
+                risky = is_risky_box(x1p, y1p, x2p, y2p, yconf, W, H)
+
+                if risky:
+                    # stronger search: more scales + more shift + more union
+                    mask, mscore, dbg = predict_mask_multi_prompt(
+                        predictor,
+                        yolo_box_xyxy=(x1p, y1p, x2p, y2p),
+                        yolo_conf=yconf,
+                        scales=(1.00, 1.12, 1.25, 1.40, 1.55),
+                        shift_frac=0.06,
+                        max_union=3
+                    )
+                else:
+                    # normal search: cheaper
+                    mask, mscore, dbg = predict_mask_multi_prompt(
+                        predictor,
+                        yolo_box_xyxy=(x1p, y1p, x2p, y2p),
+                        yolo_conf=yconf,
+                        scales=(1.00, 1.15, 1.28, 1.40),
+                        shift_frac=0.03,
+                        max_union=2
+                    )
+
 
                 # --- Compute min area in pixels from m² threshold ---
                 px_w = abs(transform.a)
@@ -2841,7 +3233,8 @@ def detect_buildings(bounds):
                         ex1, ey1, ex2, ey2 = dbg["best_prompt_box"]
 
                     box_area = max(1, (x2p - x1p) * (y2p - y1p))
-                    min_area = max(20, int(0.002 * box_area))
+                    #min_area = max(20, int(0.002 * box_area))
+                    min_area = min_area_px_from_m2
 
                     # --- Clip around "best prompt box" (loose), with area-loss guard ---
                     MIN_PAD_PX = 16
@@ -2945,11 +3338,13 @@ def detect_buildings(bounds):
                                     # Drop seam/road "strip" artifacts (thin, long, small area)
                                     # (Your bad case: aspect~8.7, min_dim~1.6m, area~9m2)
                                     if (min_dim < 3.0 and aspect > 4.0):
-                                        sam_polys = []
-                                    elif aspect > 12.0:
-                                        sam_polys = []
-                                    else:
-                                        sam_polys = [(poly, best_score)]
+                                        log.warning(f"[AOI] Rejecting sliver poly: min_dim={min_dim:.2f}m aspect={aspect:.2f}")
+                                        continue
+                                    if aspect > 12.0:
+                                        log.warning(f"[AOI] Rejecting extreme-aspect poly: aspect={aspect:.2f}")
+                                        continue
+                                    
+                                    sam_polys = [(poly, best_score)]
 
 
                 # Build YOLO bbox polygon in world coords
@@ -2968,9 +3363,10 @@ def detect_buildings(bounds):
                     else:
                         final_conf = 0.6 * conf + 0.4 * yconf
 
-                    all_buildings.append((poly, DEFAULT_HEIGHT, final_conf))
+                    final_conf = float(np.clip(final_conf, 0.0, 1.0))
 
-                       
+                    all_buildings.append((poly, DEFAULT_HEIGHT, final_conf))
+        
         
 
         
@@ -3002,6 +3398,50 @@ def detect_buildings(bounds):
 
         sam_buildings = suppress_duplicates_by_overlap(sam_buildings, overlap_min=0.65)
 
+
+        # Keep a copy before heuristic filtering
+        sam_buildings_before_heur = list(sam_buildings)
+
+        filtered = []
+        for poly, height, conf in sam_buildings:
+            area_m2 = poly.area
+            min_area = MIN_MASK_AREA_M2
+
+            poly_bounds = poly.bounds
+            bw = poly_bounds[2] - poly_bounds[0]
+            bh = poly_bounds[3] - poly_bounds[1]
+            aspect = (max(bw, bh) / max(1e-6, min(bw, bh)))
+
+            hull = poly.convex_hull
+            solidity = float(area_m2 / max(1e-6, hull.area))
+            rectangularity = float(area_m2 / max(1e-6, bw * bh))
+
+            log.info(
+                f"POLY stats: area_m2={area_m2:.1f}, aspect={aspect:.2f}, "
+                f"bounds_w={bw:.1f}, bounds_h={bh:.1f}"
+            )
+
+            if area_m2 < min_area:
+                continue
+
+            # Heuristics (keep, but don't allow them to delete everything)
+            if solidity < 0.18 and area_m2 < 200:          # allow big polys even if weird
+                continue
+            if rectangularity < 0.42 and area_m2 < 200:    # allow big polys even if weird
+                continue
+            if aspect > 12.0 and area_m2 < 300:            # only reject extreme strips if small
+                continue
+
+            filtered.append((poly, height, conf))
+
+        # If heuristics killed everything, fall back to the pre-filter set
+        if not filtered and sam_buildings_before_heur:
+            log.warning(
+                "[AOI] Heuristic poly filters removed all buildings -> fallback to unfiltered SAM polys"
+            )
+            filtered = sam_buildings_before_heur
+
+        sam_buildings = filtered
 
         cleaned = []
         for poly, h, conf in sam_buildings:
@@ -3049,6 +3489,32 @@ def detect_buildings(bounds):
 
         buildings = list(sam_buildings)  # ALWAYS keep SAM results
 
+        if osm is not None:
+            for geom in osm.geometry:
+                if geom.geom_type == "MultiPolygon":
+                    geom = max(geom.geoms, key=lambda g: g.area)
+
+                poly = (
+                    gpd.GeoSeries([geom], crs=osm.crs)
+                    .to_crs(raster_crs)
+                    .iloc[0]
+                )
+
+                if not is_airport_building(poly):
+                    #confidence *= 0.5
+                    continue
+
+                 # only skip if overlaps SAM
+                if any(poly.intersects(p) for p,_,_ in sam_buildings):
+                    continue
+
+                buildings.append((poly, DEFAULT_HEIGHT, 0.95))
+
+        if not buildings:
+            log.warning("No buildings detected")
+            #return None
+
+        
         for poly, _, conf in buildings:
             height = None
 
@@ -3144,7 +3610,7 @@ def detect_buildings(bounds):
         gdf = gpd.GeoDataFrame.from_features(features, crs=raster_crs).to_crs(epsg=4326)
 
         # 🔒 STRICT AOI GUARD (fix outside-AOI buildings)
-        gdf = clip_gdf_to_aoi_4326(gdf, bounds)
+        gdf = clip_gdf_to_aoi_4326(gdf, aoi_bounds_4326)
 
         if gdf.empty:
             log.warning("All features clipped out by AOI guard -> returning empty")
@@ -3159,20 +3625,56 @@ def detect_buildings(bounds):
 
         # Export GLB using only building polys that survived clip
         # (Keep your original final_buildings list, but filter by AOI now)
-        from shapely.geometry import box as shp_box
-        aoi_poly_4326 = shp_box(*bounds)
+        from shapely.ops import transform as shp_transform
+        from pyproj import Transformer
+
+        def _looks_like_3857(geom):
+            # EPSG:3857 meters are large (millions). EPSG:4326 degrees are < 180.
+            minx, miny, maxx, maxy = geom.bounds
+            return max(abs(minx), abs(maxx), abs(miny), abs(maxy)) > 1000
+
+        # --- Clip final buildings strictly to AOI bounds (robust CRS handling) ---
+        aoi_poly_4326 = box(west, south, east, north)
         aoi_poly_raster = gpd.GeoSeries([aoi_poly_4326], crs="EPSG:4326").to_crs(raster_crs).iloc[0]
 
+        to_4326 = Transformer.from_crs(raster_crs, "EPSG:4326", always_xy=True).transform
+        to_raster = Transformer.from_crs("EPSG:4326", raster_crs, always_xy=True).transform
+
         kept_buildings = []
-        for poly, height, conf, shadow in final_buildings:
+
+        logger.info(f"[AOI GUARD DBG] raster_crs={raster_crs}")
+        logger.info(f"[AOI GUARD DBG] aoi_poly_raster.bounds={aoi_poly_raster.bounds}")
+        if final_buildings:
+            b = final_buildings[0].bounds
+            logger.info(f"[AOI GUARD DBG] first_building.bounds={b}")
+        for poly in final_buildings:
             if poly is None or poly.is_empty:
                 continue
-            clipped = poly.intersection(aoi_poly_raster)
-            if clipped.is_empty:
+
+            # Repair invalid polygons before clipping
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+
+            # Clip in the CRS that matches the polygon
+            if _looks_like_3857(poly):
+                inter = poly.intersection(aoi_poly_raster)
+            else:
+                inter = poly.intersection(aoi_poly_4326)
+
+            if inter.is_empty or inter.area <= 0:
                 continue
-            if clipped.geom_type == "MultiPolygon":
-                clipped = max(clipped.geoms, key=lambda g: g.area)
-            kept_buildings.append((clipped, height, conf, shadow))
+
+            # IMPORTANT: keep everything in raster_crs for the rest of the pipeline
+            # If inter came from 4326, convert it to raster_crs
+            if not _looks_like_3857(inter):
+                inter = shp_transform(to_raster, inter)
+
+            kept_buildings.append(inter)
+
+        final_buildings = kept_buildings
+        if not final_buildings:
+            logger.warning("All features clipped out by AOI guard -> returning empty")
+            return {"type": "FeatureCollection", "features": []}
 
         export_glb([flat_roof(p, h) for p, h, _, _ in kept_buildings], out_glb_abs)
 
