@@ -405,8 +405,6 @@ def predict_mask_multi_prompt(
     min_shift_px=6,
     touch_thr=0.010,             # boundary touch threshold
     max_union=2,                 # union top-k masks when they complement
-    image_rgb=None,              # optional full image RGB (H,W,3) for post-processing
-    postprocess=False,           # enable extra cleanup/completion steps
 ):
     """
     Returns: best_mask_bool (H,W), best_score (float), debug dict
@@ -419,15 +417,14 @@ def predict_mask_multi_prompt(
     """
     H, W = predictor.original_size
 
-    # Defensive: tile path sometimes passes None or unexpected objects
+    # --- robust box handling (tile branch sometimes passes None/invalid) ---
     if yolo_box_xyxy is None:
-        return None, -1.0, {"tried": 0, "kept": 0, "reason": "yolo_box_none"}
+        return None, -1.0, {"error": "yolo_box_xyxy is None"}
+    try:
+        x1, y1, x2, y2 = [int(round(float(v))) for v in yolo_box_xyxy]
+    except Exception as e:
+        return None, -1.0, {"error": f"bad yolo_box_xyxy: {e}"}
 
-    # Ensure we have a simple 4-value iterable
-    yb = np.asarray(yolo_box_xyxy).reshape(-1)
-    if yb.size != 4:
-        return None, -1.0, {"tried": 0, "kept": 0, "reason": f"bad_box_size:{int(yb.size)}"}
-    x1, y1, x2, y2 = [int(v) for v in yolo_box_xyxy]
     bw0 = max(2, x2 - x1)
     bh0 = max(2, y2 - y1)
 
@@ -499,7 +496,8 @@ def predict_mask_multi_prompt(
             fill_pen = 0.25
 
         # boundary penalty (strong for chopped roofs)
-        touch_pen = 6.0 * max(0.0, float(touch) - float(touch_thr))
+        touch_w = 4.5 if fill > 0.35 else 2.5
+        touch_pen = touch_w * max(0.0, float(touch) - float(touch_thr))
 
         # solidity reward (cap)
         sol_rew = 0.35 * float(np.clip(solidity, 0.0, 1.0))
@@ -694,77 +692,6 @@ def predict_mask_multi_prompt(
 
     
 
-
-    # ---------- optional post-process (tile/global refinement) ----------
-    if postprocess and best_mask is not None:
-        try:
-            # 1) Keep only the component that best matches the original YOLO box (prevents accidental multi-building merges)
-            cx = int(round((x1 + x2) * 0.5))
-            cy = int(round((y1 + y2) * 0.5))
-            m8 = best_mask.astype(np.uint8)
-            nlab, labels = cv2.connectedComponents(m8, connectivity=8)
-            if nlab > 2:
-                # choose label containing center; else max overlap with original YOLO box
-                chosen = None
-                if 0 <= cx < W and 0 <= cy < H:
-                    lab_c = int(labels[cy, cx])
-                    if lab_c != 0:
-                        chosen = lab_c
-                if chosen is None:
-                    # overlap with original YOLO box
-                    xo1, yo1, xo2, yo2 = max(0, x1), max(0, y1), min(W, x2), min(H, y2)
-                    best_ov = -1.0
-                    for lab in range(1, nlab):
-                        comp = (labels == lab)
-                        ov = float(comp[yo1:yo2, xo1:xo2].sum())
-                        if ov > best_ov:
-                            best_ov = ov
-                            chosen = lab
-                best_mask = (labels == int(chosen))
-
-            # 2) Morphological completion (fills small roof gaps and reduces jagged edges)
-            ar2 = float(bw0) / float(bh0) if bh0 > 0 else 1.0
-            k = 5 if ar2 >= 2.0 else 3
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (k, k))
-            m = best_mask.astype(np.uint8)
-            m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, kernel, iterations=1)
-
-            # fill holes
-            inv = (1 - m).astype(np.uint8)
-            flood = inv.copy()
-            h, w = flood.shape
-            mask_ff = np.zeros((h + 2, w + 2), np.uint8)
-            cv2.floodFill(flood, mask_ff, (0, 0), 0)
-            holes = (flood == 1)
-            m[holes] = 1
-            best_mask = (m > 0)
-
-            # 3) Shadow-trim (only along boundary; never chop large roof area)
-            if image_rgb is not None and isinstance(image_rgb, np.ndarray) and image_rgb.ndim == 3:
-                # V channel
-                rgb = image_rgb
-                if rgb.shape[2] == 3:
-                    hsv = cv2.cvtColor(rgb.astype(np.uint8), cv2.COLOR_RGB2HSV)
-                    v = hsv[:, :, 2].astype(np.float32)
-
-                    mb = best_mask.astype(np.uint8)
-                    er = cv2.erode(mb, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)), iterations=1)
-                    boundary = (mb == 1) & (er == 0)
-                    if boundary.any():
-                        v_in = v[mb == 1]
-                        med = float(np.median(v_in)) if v_in.size else 0.0
-                        # shadow is much darker; threshold relative to roof median
-                        thr = max(0.0, med - 35.0)
-
-                        remove = boundary & (v < thr)
-                        # guard: do not remove more than 6% of area
-                        if float(remove.sum()) / max(1.0, float(mb.sum())) <= 0.06:
-                            mb2 = mb.copy()
-                            mb2[remove] = 0
-                            best_mask = (mb2 > 0)
-        except Exception:
-            # never crash inference due to post-processing
-            pass
     dbg = {
         "tried": int(tried),
         "kept": int(len(candidates)),
@@ -2568,11 +2495,25 @@ def detect_buildings(bounds):
                             best_clipped_area = best_area
 
                         if best_clipped_area < min_area:
+                            # Fallback: keep pre-clip mask (prevents missing buildings if clipping/cleanup over-prunes).
+                            if best_preclip is not None and best_area >= min_area:
+                                poly_fb = mask_to_polygon({"segmentation": best_preclip}, t_transform)
+                                if poly_fb is not None:
+                                    final_conf = float(np.clip(0.85 * yconf + 0.15 * max(0.0, min(1.0, best_score)), 0.0, 1.0))
+                                    all_buildings.append((poly_fb, DEFAULT_HEIGHT, final_conf))
+                                    continue
                             DROP["min_area"] += 1
                             continue
 
                         poly = mask_to_polygon({"segmentation": best}, t_transform)
                         if poly is None:
+                            # Fallback: polygonize pre-clip (often contains full roof even if postprocessing failed).
+                            if best_preclip is not None:
+                                poly_fb = mask_to_polygon({"segmentation": best_preclip}, t_transform)
+                                if poly_fb is not None:
+                                    final_conf = float(np.clip(0.85 * yconf + 0.15 * max(0.0, min(1.0, best_score)), 0.0, 1.0))
+                                    all_buildings.append((poly_fb, DEFAULT_HEIGHT, final_conf))
+                                    continue
                             DROP["poly_none"] += 1
                             continue
 
@@ -2822,9 +2763,7 @@ def detect_buildings(bounds):
                     yolo_conf=yconf,
                     scales=(1.00, 1.15, 1.28, 1.40),
                     shift_frac=0.03,
-                    max_union=2,
-                    image_rgb=img_rgb,
-                    postprocess=True
+                    max_union=2
                 )
 
                 # --- Compute min area in pixels from m² threshold ---

@@ -271,7 +271,10 @@ html, body { margin:0; height:100%; }
   <button onclick="toggleImportPanel()">📥 Import (GeoJSON / GLB)</button>
   <button onclick="enableFeedbackMode()">🧠 Improve Model</button>
   <button onclick="enableYOLOFeedback()">📦 Improve Detector (YOLO)</button>
+  <button onclick="enableManualBuildMode()">🏗 Manual Build Map</button>
+  <button onclick="saveManualBuild()">💾 Save Manual Map</button>
   <button onclick="clearAll()">♻ Clear</button>
+
 </div>
 
 <!-- EXPORT PANEL -->
@@ -459,6 +462,14 @@ html, body { margin:0; height:100%; }
 
 <script>
 
+let manualBuildMode = false;
+let manualStage = null; // "building" | "shadow"
+let manualBuildings = [];
+
+let currentBuildingLayer = null;
+let currentShadowLayer = null;
+
+let manualDrawControl = null;
 
 
 /* export feature constants */
@@ -470,6 +481,10 @@ let lastOutputs = {
 };
 
 
+
+// Map instances (declared early to avoid TDZ errors)
+let map2d = null;
+let map3d = null;
 function showExportPanel(data) {
   // data.geojson = "output/buildings_xxx.geojson"
   // data.glb    = "output/aoi_buildings_xxx.glb"
@@ -840,6 +855,95 @@ function closeGlbViewer() {
 }
 
 
+function startManualPolygonDraw(color = "#2563eb") {
+  if (manualDrawControl) {
+    try { manualDrawControl.disable(); } catch(e){}
+    manualDrawControl = null;
+  }
+
+  manualDrawControl = new L.Draw.Polygon(map2d, {
+    allowIntersection: false,
+    showArea: true,
+    shapeOptions: { color }
+  });
+
+  manualDrawControl.enable();
+}
+
+
+
+function enableManualBuildMode() {
+  //cancelAllModes(); // reuse your existing cleanup if any
+
+  manualBuildMode = true;
+  manualStage = "building";
+  manualBuildings = [];
+
+  showToast("<b>Manual Build Mode</b><br/>Draw BUILDING footprint (min 3 points)");
+
+  manualBuildMode = true;
+manualStage = "building";
+manualBuildings = [];
+
+showToast("<b>Manual Build Mode</b><br/>Draw BUILDING footprint (min 3 points)");
+startManualPolygonDraw("#2563eb"); // blue = building
+
+
+}
+
+function isValidPolygon(layer) {
+  const latlngs = layer.getLatLngs()[0];
+  return latlngs && latlngs.length >= 3;
+}
+
+
+
+function saveManualPair() {
+  const buildingGeoJSON = currentBuildingLayer.toGeoJSON().geometry;
+  const shadowGeoJSON   = currentShadowLayer.toGeoJSON().geometry;
+
+  manualBuildings.push({
+    id: "bldg_" + (manualBuildings.length + 1),
+    building: buildingGeoJSON,
+    shadow: shadowGeoJSON
+  });
+
+  showToast(`✅ Building ${manualBuildings.length} saved`);
+
+  currentBuildingLayer = null;
+  currentShadowLayer = null;
+
+  manualStage = "building";
+startManualPolygonDraw("#2563eb"); // next building
+  }
+
+
+async function saveManualBuild() {
+  if (manualBuildings.length === 0) {
+    alert("No buildings drawn.");
+    return;
+  }
+
+  const res = await fetch("/manual_build/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      crs: "EPSG:4326",
+      buildings: manualBuildings
+    })
+  });
+
+  if (!res.ok) {
+    alert("Save failed");
+    return;
+  }
+
+  const data = await res.json();
+  showExportPanel(data); // reuse your export UI
+  showToast("🏗 Manual map saved & exported");
+}
+
+
 
 
 /* loader for ml run =============== */
@@ -1101,12 +1205,47 @@ feedbackLayer.eachLayer(layer => {
 
 /* ================= MAP 2D ================= */
 
-// const map2d = L.map("map2d").setView([CENTER[1], CENTER[0]], 19);
+// map2d =  L.map("map2d").setView([CENTER[1], CENTER[0]], 19);
 // L.tileLayer("/tiles/{z}/{x}/{y}.png", { maxZoom:20 }).addTo(map2d);
 
-const map2d = L.map("map2d");
+map2d =  L.map("map2d");
 
 const tiles2d = L.tileLayer("/tiles/{z}/{x}/{y}.png", { maxZoom: 20 }).addTo(map2d);
+
+// ================= MANUAL BUILD DRAW HANDLER =================
+
+map2d.on(L.Draw.Event.CREATED, function (e) {
+
+  // Ignore if not manual build
+  if (!manualBuildMode) return;
+
+  const layer = e.layer;
+
+  if (!isValidPolygon(layer)) {
+    showToast("❌ Polygon needs at least 3 points");
+    return;
+  }
+
+  if (manualStage === "building") {
+  currentBuildingLayer = layer;
+  currentBuildingLayer.addTo(map2d);
+
+  manualStage = "shadow";
+  showToast("Now draw SHADOW polygon for this building");
+
+  startManualPolygonDraw("#dc2626"); // red = shadow
+  return;
+}
+
+  if (manualStage === "shadow") {
+    currentShadowLayer = layer;
+    currentShadowLayer.addTo(map2d);
+
+    saveManualPair();
+    return;
+  }
+});
+
 
 tiles2d.on("loading", () => console.log("2D tiles loading..."));
 tiles2d.on("load", () => console.log("2D tiles loaded"));
@@ -1293,7 +1432,7 @@ map2d.on(L.Draw.Event.CREATED, e => {
 
 
 
-// const map3d = new mapboxgl.Map({
+// map3d =  new mapboxgl.Map({
 //   container: "map3d",
 //   style: {
 //     version: 8,
@@ -1310,7 +1449,7 @@ map2d.on(L.Draw.Event.CREATED, e => {
 //   preserveDrawingBuffer: true
 // });
 
-const map3d = new maplibregl.Map({
+map3d =  new maplibregl.Map({
   container: "map3d",
   style: {
     version: 8,
@@ -1578,6 +1717,8 @@ map3d.addLayer({
   id:"buildings",
   type:"fill-extrusion",
   source:"buildings",
+  // 🔑 THIS LINE IS CRITICAL
+  filter: ["==", ["get", "kind"], "building"],
   paint:{
     "fill-extrusion-color": [
       "case",
@@ -1612,10 +1753,10 @@ map3d.addLayer(
     type: "fill",
     source: "buildings",
     paint: {
-      "fill-color": "#FF0000",
+      "fill-color": "#111111",
       "fill-opacity": 0.35
     },
-    filter: ["==", ["get", "feature_type"], "shadow"]
+    filter: ["==", ["get", "kind"], "shadow"]
   },
   "buildings"
 );
@@ -1756,17 +1897,21 @@ map3d.on("mousemove", "building-shadows", e => {
   const f = e.features[0];
   if (!f) return;
 
+  map3d.getCanvas().style.cursor = "pointer";
+
   hoverPopup
     .setLngLat(e.lngLat)
     .setHTML(`
-      <div style="font-size:12px;color:#ff3333">
-        <b>${f.properties.id}</b><br/>
-        Shadow length: ${Number(f.properties.shadow_len).toFixed(2)} m<br/>
-        Azimuth: ${Number(f.properties.sun_azimuth).toFixed(1)}°
+      <div style="font-size:12px;color:#111">
+        <b>Shadow of ${f.properties.parent_building}</b><br/>
+        Shadow length: ${Number(f.properties.shadow_length_m).toFixed(2)} m<br/>
+        Sun azimuth: ${Number(f.properties.sun_azimuth).toFixed(1)}°<br/>
+        Confidence: ${(f.properties.confidence * 100).toFixed(0)}%
       </div>
     `)
     .addTo(map3d);
 });
+
 
 
 
@@ -1862,8 +2007,8 @@ function apply3DStyleMode() {
           ["boolean", ["feature-state", "selected"], false], "#00FFFF",
           ["boolean", ["feature-state", "hover"], false], "#8000FF",
           ["interpolate", ["linear"], ["get", "confidence"],
-            0.4, "#FF3333",
-            0.7, "#FFA500",
+            0.4, "#00FF99",
+            0.7, "#00FF99",
             0.9, "#00FF99"
           ]
         ]);
@@ -1910,7 +2055,7 @@ function showToast(html, ms = 2200) {
 // ---------- Mode helpers ----------
 function isAnyDrawingModeActive() {
   // If any of these are true, DO NOT show "point info" click popups
-  return !!(feedbackMode || yoloMode || aoiDrawActive || p2pMode);
+  return !!(feedbackMode || yoloMode || aoiDrawActive || p2pMode || manualBuildMode );
 }
 
 // ---------- Distance helpers ----------
@@ -2900,7 +3045,53 @@ document.querySelectorAll('input[name="fbType"]').forEach(r => {
 })();
 
 
+
+async function togglePrebuildView() {
+  const res = await fetch("/manual_build/prebuild/latest");
+  const data = await res.json();
+
+  if (!data.exists) {
+    showToast("❌ No prebuilt map available");
+    return;
+  }
+
+  show3DView();
+  loadBuildings(data.geojson);
+  apply3DStyleMode();
+}
+
+
+
+window.addEventListener("load", async () => {
+  try {
+    const res = await fetch("/manual_build/prebuild/latest");
+    const data = await res.json();
+
+    if (!data.exists) return;
+
+    // Load like ML output (same pipeline)
+    show3DView();
+    showLoading("Loading prebuilt 3D map…");
+
+    loadBuildings(data.geojson);   // existing function
+    apply3DStyleMode();
+
+    map3d.once("idle", () => {
+      hideLoading();
+      showToast("<b>🧱 Prebuilt map loaded</b>", 1800);
+    });
+
+  } catch (e) {
+    console.warn("No prebuild map found");
+  }
+});
+
+
 </script>
+
+<button onclick="togglePrebuildView()" style="position:absolute; bottom:12px; left:12px; z-index:9999;">
+🧱 Prebuild View
+</button>
 
 </body>
 </html>
