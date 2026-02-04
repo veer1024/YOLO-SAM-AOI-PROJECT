@@ -7,13 +7,14 @@
 
 
 <!-- Leaflet -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css"/>
 
 <!-- Leaflet Draw -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+<link rel="stylesheet" href="/static/vendor/leaflet-draw/leaflet.draw.css"/>
 
-<!-- Mapbox -->
-<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet"/>
+<!-- MapLibre GL -->
+<link rel="stylesheet" href="/static/vendor/maplibre-gl/maplibre-gl.css"/>
+
 
 <style>
 
@@ -202,13 +203,25 @@ html, body { margin:0; height:100%; }
 .pinfo-wrap { position: relative; }
 
 
+.import-box{
+  border:2px dashed #cbd5e1;
+  border-radius:10px;
+  padding:12px;
+  background:#f8fafc;
+}
+.import-hint{ font-size:13px; color:#334155; text-align:center; }
+.import-status{ margin:10px 0 6px; font-size:12px; }
+.import-status .ok{ color:#16a34a; }
+.import-status .bad{ color:#dc2626; }
+#importLoadBtn:disabled{ opacity:0.5; cursor:not-allowed; }
+
 </style>
 </head>
 
 <body>
 
 
-  
+
 
   <div id="toast"></div>
 <div id="loadingOverlay" aria-live="polite" aria-busy="true">
@@ -227,6 +240,7 @@ html, body { margin:0; height:100%; }
   <button id="runBtn" onclick="runAOIML()">🚀 Run ML</button>
   <button onclick="toggleTiles()">🟪 Toggle Tiles</button>
   <button id="p2pBtn" onclick="toggleP2PDistance()">📏 P2P Distance</button>
+  <button onclick="toggle3DStyle()">🗺 View: Satellite / Shadowmap</button>
 
   <div id="aoiInfo">AOI: not selected</div>
 
@@ -254,9 +268,16 @@ html, body { margin:0; height:100%; }
 <!-- RIGHT PANEL -->
 <div class="panel-right">
   <button onclick="toggle3DView()">🧭 Toggle 3D / Top</button>
+  <button onclick="toggleImportPanel()">📥 Import (GeoJSON / GLB)</button>
   <button onclick="enableFeedbackMode()">🧠 Improve Model</button>
   <button onclick="enableYOLOFeedback()">📦 Improve Detector (YOLO)</button>
+  <button onclick="enableManualBuildMode()">🏗 Manual Build Map</button>
+  <button onclick="saveManualBuild()">💾 Save Manual Map</button>
+  <button onclick="exportPrebuild('geojson')">⬇ Export GeoJSON</button>
+  <button onclick="exportPrebuild('glb')">⬇ Export GLB</button>
+
   <button onclick="clearAll()">♻ Clear</button>
+
 </div>
 
 <!-- EXPORT PANEL -->
@@ -274,6 +295,82 @@ html, body { margin:0; height:100%; }
   <hr/>
 
   <button id="dlTiffBtn">🗺 Export GeoTIFF (AOI)</button>
+</div>
+
+
+<!-- IMPORT PANEL -->
+<div id="importPanel" class="panel-right" style="top:520px; display:none;">
+  <b>Import</b><br/><br/>
+
+  <div id="dropZone" class="import-box">
+    <div class="import-hint">
+      Drag & drop <b>.geojson</b> + <b>.glb</b><br/>
+      <small>Exactly one of each (max 2 files)</small>
+    </div>
+
+    <input id="importFileInput" type="file" multiple
+      accept=".geojson,.glb,application/geo+json,model/gltf-binary"
+      style="width:100%;"
+    />
+
+    <div class="import-status">
+      <div id="geojsonStatus" class="bad">❌ GeoJSON not loaded</div>
+      <div id="glbStatus" class="bad">❌ GLB not loaded</div>
+    </div>
+
+    <button id="importLoadBtn" onclick="runImportUpload()" disabled>⬆ Upload & Load</button>
+    <button onclick="clearImported()">🧹 Clear Imported</button>
+  </div>
+</div>
+
+
+<!-- GLB VIEWER (overlay) -->
+<div id="glbViewerWrap" style="
+  position: fixed;
+  inset: 0;
+  display: none;
+  z-index: 100001;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(2px);
+">
+  <div style="
+    position:absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%,-50%);
+    width: min(980px, 92vw);
+    height: min(680px, 86vh);
+    background: #111;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 18px 60px rgba(0,0,0,0.45);
+  ">
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; color:#fff; font-family:system-ui;">
+      <b>GLB Viewer</b>
+      <button onclick="closeGlbViewer()" style="cursor:pointer; border:none; background:#333; color:#fff; padding:6px 10px; border-radius:10px;">✕ Close</button>
+    </div>
+    <div style="height: calc(100% - 44px); background:#000;">
+      <!-- <model-viewer id="glbViewer"
+        style="width:100%; height:100%;"
+        src=""
+        camera-controls
+        auto-rotate
+        exposure="1.0"
+        shadow-intensity="0.7"
+        ar
+      ></model-viewer> -->
+      <model-viewer id="glbViewer"
+        style="width:100%; height:100%;"
+        src=""
+        camera-controls
+        auto-rotate
+        exposure="1.4"
+        shadow-intensity="1.0"
+        environment-image="neutral"
+        tone-mapping="aces"
+      ></model-viewer>
+    </div>
+  </div>
 </div>
 
 
@@ -349,17 +446,33 @@ html, body { margin:0; height:100%; }
 <div id="map3d"></div>
 
 <!-- LIBS -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 
-<!-- Geometry Util (CRITICAL) -->
-<script src="https://unpkg.com/leaflet-geometryutil@0.10.1/src/leaflet.geometryutil.js"></script>
 
+<!-- Leaflet -->
+<script src="/static/vendor/leaflet/leaflet.js"></script>
+
+<!-- Leaflet Draw -->
+<script src="/static/vendor/leaflet-draw/leaflet.draw.js"></script>
+
+<!-- MapLibre GL -->
+<script src="/static/vendor/maplibre-gl/maplibre-gl.js"></script>
+
+<!-- Geometry Util -->
+<script src="/static/vendor/leaflet-geometryutil/leaflet.geometryutil.js"></script>
+
+<script type="module" src="/static/vendor/model-viewer/model-viewer.min.js"></script>
 
 
 <script>
 
+let manualBuildMode = false;
+let manualStage = null; // "building" | "shadow"
+let manualBuildings = [];
+
+let currentBuildingLayer = null;
+let currentShadowLayer = null;
+
+let manualDrawControl = null;
 
 
 /* export feature constants */
@@ -371,6 +484,10 @@ let lastOutputs = {
 };
 
 
+
+// Map instances (declared early to avoid TDZ errors)
+let map2d = null;
+let map3d = null;
 function showExportPanel(data) {
   // data.geojson = "output/buildings_xxx.geojson"
   // data.glb    = "output/aoi_buildings_xxx.glb"
@@ -490,6 +607,351 @@ async function downloadAOIGeoTiff() {
 }
 
 
+function toggleImportPanel() {
+  clearAll();
+  const panel = document.getElementById("importPanel");
+  if (!panel) return;
+
+  const isOpen = panel.style.display !== "none";
+
+  // close it
+  if (isOpen) {
+    panel.style.display = "none";
+    return;
+  }
+
+  // open it
+  panel.style.display = "block";
+
+  // optional: close other panels so UI doesn’t overlap
+  try { document.getElementById("feedbackPanel").style.display = "none"; } catch(e){}
+  try { document.getElementById("yoloPanel").style.display = "none"; } catch(e){}
+
+  // ensure status text/button state is correct when opening
+  try { updateImportUI(); } catch(e){}
+}
+
+
+/* import glb, geojson */
+
+/* import glb, geojson */
+
+// -----------------------
+// IMPORT STATE (strict)
+// -----------------------
+let _importFiles = []; // File[]
+let _importGeoFile = null; // File
+let _importGlbFile = null; // File
+let _importedGeojsonPath = null;
+let _importedGlbPath = null;
+
+function updateImportUI() {
+  const geoEl = document.getElementById("geojsonStatus");
+  const glbEl = document.getElementById("glbStatus");
+  const loadBtn = document.getElementById("importLoadBtn");
+
+  if (geoEl) {
+    geoEl.textContent = _importGeoFile ? `✔ ${_importGeoFile.name}` : "❌ GeoJSON not loaded";
+    geoEl.className = _importGeoFile ? "ok" : "bad";
+  }
+  if (glbEl) {
+    glbEl.textContent = _importGlbFile ? `✔ ${_importGlbFile.name}` : "❌ GLB not loaded";
+    glbEl.className = _importGlbFile ? "ok" : "bad";
+  }
+
+  if (loadBtn) loadBtn.disabled = !(_importGeoFile && _importGlbFile);
+}
+
+function clearImported() {
+  _importFiles = [];
+  _importGeoFile = null;
+  _importGlbFile = null;
+  _importedGeojsonPath = null;
+  _importedGlbPath = null;
+
+  const inp = document.getElementById("importFileInput");
+  if (inp) inp.value = "";
+
+
+
+  updateImportUI();
+  showToast(`<b>🧹 Cleared import selection</b>`, 1500);
+}
+
+function validateAndSetImportFiles(files) {
+  const picked = Array.from(files || []);
+  if (picked.length === 0) return;
+
+  for (const f of picked) {
+    const n = (f.name || "").toLowerCase();
+
+    if (n.endsWith(".geojson")) {
+      _importGeoFile = f;
+    } else if (n.endsWith(".glb")) {
+      _importGlbFile = f;
+    } else {
+      showToast(
+        `<b>❌ Unsupported file</b><div class="small">${f.name}</div>`,
+        2500
+      );
+    }
+  }
+
+  // Enforce "exactly one of each"
+  if (_importGeoFile && _importGlbFile) {
+    _importFiles = [_importGeoFile, _importGlbFile];
+    showToast(
+      `<b>📥 Ready to import</b><div class="small">${_importGeoFile.name} + ${_importGlbFile.name}</div>`,
+      2200
+    );
+  } else {
+    _importFiles = [];
+  }
+
+  updateImportUI();
+}
+
+
+// Dropzone wiring
+(function wireDropZone(){
+  const dz = document.getElementById("dropZone");
+  const inp = document.getElementById("importFileInput");
+  if (!dz || !inp) return;
+
+  dz.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dz.style.background = "#f0f7ff";
+    dz.style.borderColor = "#2563eb";
+  });
+
+  dz.addEventListener("dragleave", () => {
+    dz.style.background = "#f8fafc";
+    dz.style.borderColor = "#cbd5e1";
+  });
+
+  dz.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dz.style.background = "#f8fafc";
+    dz.style.borderColor = "#cbd5e1";
+    validateAndSetImportFiles(e.dataTransfer.files);
+  });
+
+  inp.addEventListener("change", (e) => {
+    validateAndSetImportFiles(e.target.files);
+  });
+
+  updateImportUI(); // init state on load
+})();
+
+
+async function fitMapToGeoJSONPath(path) {
+  try {
+    const res = await fetch("/ml/" + path);
+    const gj = await res.json();
+
+    let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+
+    function scan(coords) {
+      coords.forEach(c => {
+        if (typeof c[0] === "number") {
+          minLng = Math.min(minLng, c[0]);
+          minLat = Math.min(minLat, c[1]);
+          maxLng = Math.max(maxLng, c[0]);
+          maxLat = Math.max(maxLat, c[1]);
+        } else scan(c);
+      });
+    }
+
+    (gj.features || []).forEach(f => {
+      if (f?.geometry?.coordinates) scan(f.geometry.coordinates);
+    });
+
+    if (!isFinite(minLng)) return;
+
+    map3d.fitBounds([[minLng, minLat], [maxLng, maxLat]], {
+      padding: 80,
+      duration: 900,
+      maxZoom: 19,
+      pitch: (viewMode === "3d") ? 65 : 0,
+      bearing: (viewMode === "3d") ? -20 : 0
+    });
+  } catch (e) {
+    console.warn("fitMapToGeoJSONPath failed:", e);
+  }
+}
+
+
+async function runImportUpload() {
+  if (!_importFiles || _importFiles.length === 0) {
+    alert("Select or drop .geojson / .glb first.");
+    return;
+  }
+
+  const fd = new FormData();
+  for (const f of _importFiles) fd.append("files", f);
+
+  try {
+    showLoading("Uploading imported files…");
+
+    const res = await fetch("/import_upload", {
+      method: "POST",
+      body: fd
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      hideLoading();
+      throw new Error(data.error || "Import upload failed");
+    }
+
+    // Backend returns { geojson: "imports/...geojson", glb: "imports/...glb" }
+    _importedGeojsonPath = data.geojson || null;
+    _importedGlbPath = data.glb || null;
+
+    // If geojson exists: load into MapLibre like normal pipeline output
+    if (_importedGeojsonPath) {
+      show3DView();
+      showLoading("Loading imported GeoJSON into 3D…");
+      loadBuildings(_importedGeojsonPath);     // your existing function expects relative path
+      apply3DStyleMode();
+
+      map3d.once("idle", async () => {
+        // ✅ zoom to imported geojson extent (not AOI, not CENTER)
+        if (_importedGeojsonPath) {
+          await fitMapToGeoJSONPath(_importedGeojsonPath);
+        }
+        hideLoading();
+        showToast(`<b>✅ Imported GeoJSON loaded</b>`, 1800);
+      });
+    } else {
+      hideLoading();
+    }
+
+    // If GLB exists: open viewer
+    if (_importedGlbPath) {
+      openGlbViewer("/ml/" + _importedGlbPath);
+    }
+
+    // Optional: show export panel so user can re-download easily
+    showExportPanel({
+      geojson: _importedGeojsonPath,
+      glb: _importedGlbPath
+    });
+
+  } catch (e) {
+    console.error(e);
+    hideLoading();
+    alert("Import failed: " + e.message);
+  }
+}
+
+function openGlbViewer(url) {
+  const wrap = document.getElementById("glbViewerWrap");
+  const viewer = document.getElementById("glbViewer");
+  if (!wrap || !viewer) return;
+  viewer.setAttribute("src", url);
+  wrap.style.display = "block";
+}
+
+function closeGlbViewer() {
+  const wrap = document.getElementById("glbViewerWrap");
+  const viewer = document.getElementById("glbViewer");
+  if (viewer) viewer.setAttribute("src", "");
+  if (wrap) wrap.style.display = "none";
+}
+
+
+function startManualPolygonDraw(color = "#2563eb") {
+  if (manualDrawControl) {
+    try { manualDrawControl.disable(); } catch(e){}
+    manualDrawControl = null;
+  }
+
+  manualDrawControl = new L.Draw.Polygon(map2d, {
+    allowIntersection: false,
+    showArea: true,
+    shapeOptions: { color }
+  });
+
+  manualDrawControl.enable();
+}
+
+
+
+function enableManualBuildMode() {
+  //cancelAllModes(); // reuse your existing cleanup if any
+
+  manualBuildMode = true;
+  manualStage = "building";
+  manualBuildings = [];
+
+  showToast("<b>Manual Build Mode</b><br/>Draw BUILDING footprint (min 3 points)");
+
+  manualBuildMode = true;
+manualStage = "building";
+manualBuildings = [];
+
+showToast("<b>Manual Build Mode</b><br/>Draw BUILDING footprint (min 3 points)");
+startManualPolygonDraw("#2563eb"); // blue = building
+
+
+}
+
+function isValidPolygon(layer) {
+  const latlngs = layer.getLatLngs()[0];
+  return latlngs && latlngs.length >= 3;
+}
+
+
+
+function saveManualPair() {
+  const buildingGeoJSON = currentBuildingLayer.toGeoJSON().geometry;
+  const shadowGeoJSON   = currentShadowLayer.toGeoJSON().geometry;
+
+  manualBuildings.push({
+    id: "bldg_" + (manualBuildings.length + 1),
+    building: buildingGeoJSON,
+    shadow: shadowGeoJSON
+  });
+
+  showToast(`✅ Building ${manualBuildings.length} saved`);
+
+  currentBuildingLayer = null;
+  currentShadowLayer = null;
+
+  manualStage = "building";
+startManualPolygonDraw("#2563eb"); // next building
+  }
+
+
+async function saveManualBuild() {
+  if (manualBuildings.length === 0) {
+    alert("No buildings drawn.");
+    return;
+  }
+
+  const res = await fetch("/manual_build/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      crs: "EPSG:4326",
+      buildings: manualBuildings
+    })
+  });
+
+  if (!res.ok) {
+    alert("Save failed");
+    return;
+  }
+
+  const data = await res.json();
+  showExportPanel(data); // reuse your export UI
+  showToast("🏗 Manual map saved & exported");
+}
+
+
+
+
 /* loader for ml run =============== */
 
 function disableMapInteraction(map) {
@@ -566,10 +1028,11 @@ function enableMapInteraction(map) {
 
 /* ================= CONFIG ================= */
 
-mapboxgl.accessToken = "pk.eyJ1IjoidmVlcjEwMjQiLCJhIjoiY21pdTduMnJrMGg5djNxcjRydGp4czc3eiJ9.1qqR0xid2EBNBFNb4TmkMg";
+//mapboxgl.accessToken = "pk.eyJ1IjoidmVlcjEwMjQiLCJhIjoiY21pdTduMnJrMGg5djNxcjRydGp4czc3eiJ9.1qqR0xid2EBNBFNb4TmkMg";
 
 let feedbackPolygons = [];     // array of GeoJSON Polygon
 let currentPolygonLayer = null;
+let viewStyleMode = "satellite"; // "satellite" | "shadowmap"
 
 
 const CENTER = [89.5348056, 28.8863333];
@@ -593,6 +1056,9 @@ let feedbackMode = false;
 let feedbackPoints = [];
 let selectedOriginalGeometry = null;
 let highlightedFeatureId = null;
+
+let prebuildActive = false;        // 🔑 is prebuild currently shown
+let prebuildLoadedOnce = false;   // 🔑 optional, for future use
 
 const aoiLayer = new L.FeatureGroup();
 const feedbackLayer = new L.FeatureGroup();
@@ -748,12 +1214,47 @@ feedbackLayer.eachLayer(layer => {
 
 /* ================= MAP 2D ================= */
 
-// const map2d = L.map("map2d").setView([CENTER[1], CENTER[0]], 19);
+// map2d =  L.map("map2d").setView([CENTER[1], CENTER[0]], 19);
 // L.tileLayer("/tiles/{z}/{x}/{y}.png", { maxZoom:20 }).addTo(map2d);
 
-const map2d = L.map("map2d");
+map2d =  L.map("map2d");
 
 const tiles2d = L.tileLayer("/tiles/{z}/{x}/{y}.png", { maxZoom: 20 }).addTo(map2d);
+
+// ================= MANUAL BUILD DRAW HANDLER =================
+
+map2d.on(L.Draw.Event.CREATED, function (e) {
+
+  // Ignore if not manual build
+  if (!manualBuildMode) return;
+
+  const layer = e.layer;
+
+  if (!isValidPolygon(layer)) {
+    showToast("❌ Polygon needs at least 3 points");
+    return;
+  }
+
+  if (manualStage === "building") {
+  currentBuildingLayer = layer;
+  currentBuildingLayer.addTo(map2d);
+
+  manualStage = "shadow";
+  showToast("Now draw SHADOW polygon for this building");
+
+  startManualPolygonDraw("#dc2626"); // red = shadow
+  return;
+}
+
+  if (manualStage === "shadow") {
+    currentShadowLayer = layer;
+    currentShadowLayer.addTo(map2d);
+
+    saveManualPair();
+    return;
+  }
+});
+
 
 tiles2d.on("loading", () => console.log("2D tiles loading..."));
 tiles2d.on("load", () => console.log("2D tiles loaded"));
@@ -940,11 +1441,27 @@ map2d.on(L.Draw.Event.CREATED, e => {
 
 
 
-const map3d = new mapboxgl.Map({
+// map3d =  new mapboxgl.Map({
+//   container: "map3d",
+//   style: {
+//     version: 8,
+//     glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+//     sources: {},
+//     layers: []
+//   },
+//   center: CENTER,
+//   zoom: 19,
+//   pitch: 65,
+//   bearing: -20,
+//   antialias: true,
+
+//   preserveDrawingBuffer: true
+// });
+
+map3d =  new maplibregl.Map({
   container: "map3d",
   style: {
     version: 8,
-    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
     sources: {},
     layers: []
   },
@@ -953,15 +1470,13 @@ const map3d = new mapboxgl.Map({
   pitch: 65,
   bearing: -20,
   antialias: true,
-
   preserveDrawingBuffer: true
 });
 
 
-
 /* ============= BUILDING HOVER ================== */
 
-const hoverPopup = new mapboxgl.Popup({
+const hoverPopup = new maplibregl.Popup({
   closeButton: false,
   closeOnClick: false,
   offset: 10
@@ -1059,6 +1574,7 @@ async function runAOIML(){
 
     // load buildings into mapbox
     loadBuildings(data.geojson);
+    apply3DStyleMode();
     showExportPanel(data);
 
     // tiles debug
@@ -1101,10 +1617,13 @@ map3d.on("load", () => {
     }
   });
 
+
+  apply3DStyleMode();
+
 });
 
 let p2pLineFeatures = [];
-let p2pLineHoverPopup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
+let p2pLineHoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
 
 function ensureP2PLineLayer() {
   if (map3d.getSource("p2p-lines")) return;
@@ -1124,18 +1643,20 @@ function ensureP2PLineLayer() {
     }
   });
 
-  map3d.on("mousemove", "p2p-lines-layer", (e) => {
-    map3d.getCanvas().style.cursor = "pointer";
-    const f = e.features && e.features[0];
-    if (!f) return;
+  // map3d.on("mousemove", "p2p-lines-layer", (e) => {
+  //   map3d.getCanvas().style.cursor = "pointer";
+  //   const f = e.features && e.features[0];
+  //   if (!f) return;
 
-    const html = `<div class="p2p-label" style="min-width:120px;">
-      <b>Segment ${f.properties.seg}</b>
-      <div class="p2p-small">Distance: ${f.properties.dist}</div>
-    </div>`;
+  //   const html = `<div class="p2p-label" style="min-width:120px;">
+  //     <b>Segment ${f.properties.seg}</b>
+  //     <div class="p2p-small">Distance: ${f.properties.dist}</div>
+  //   </div>`;
 
-    p2pLineHoverPopup.setLngLat(e.lngLat).setHTML(html).addTo(map3d);
-  });
+  //   p2pLineHoverPopup.setLngLat(e.lngLat).setHTML(html).addTo(map3d);
+  // });
+
+
 
   map3d.on("mouseleave", "p2p-lines-layer", () => {
     map3d.getCanvas().style.cursor = "";
@@ -1207,6 +1728,8 @@ map3d.addLayer({
   id:"buildings",
   type:"fill-extrusion",
   source:"buildings",
+  // 🔑 THIS LINE IS CRITICAL
+  filter: ["==", ["get", "kind"], "building"],
   paint:{
     "fill-extrusion-color": [
       "case",
@@ -1241,10 +1764,10 @@ map3d.addLayer(
     type: "fill",
     source: "buildings",
     paint: {
-      "fill-color": "#FF0000",
+      "fill-color": "#111111",
       "fill-opacity": 0.35
     },
-    filter: ["==", ["get", "feature_type"], "shadow"]
+    filter: ["==", ["get", "kind"], "shadow"]
   },
   "buildings"
 );
@@ -1285,7 +1808,7 @@ map3d.on("click", "buildings", e => {
       "#00FFFF"
     ]);
 
-    new mapboxgl.Popup()
+    new maplibregl.Popup()
       .setLngLat(e.lngLat)
       .setHTML("<b>Marked:</b> 🚫 Not a Building")
       .addTo(map3d);
@@ -1303,7 +1826,7 @@ map3d.on("click", "buildings", e => {
       "#00FFFF"
     ]);
 
-    new mapboxgl.Popup()
+    new maplibregl.Popup()
       .setLngLat(e.lngLat)
       .setHTML("<b>Wrong Geometry</b><br/>Redraw correct footprint in 2D")
       .addTo(map3d);
@@ -1381,22 +1904,57 @@ map3d.on("mousemove", "buildings", e => {
 });
 
 
+// map3d.on("mousemove", "building-shadows", e => {
+//   const f = e.features[0];
+//   if (!f) return;
+
+//   map3d.getCanvas().style.cursor = "pointer";
+
+//   hoverPopup
+//     .setLngLat(e.lngLat)
+//     .setHTML(`
+//       <div style="font-size:12px;color:#111">
+//         <b>Shadow of ${f.properties.parent_building}</b><br/>
+//         Shadow length: ${Number(f.properties.shadow_length_m).toFixed(2)} m<br/>
+//         Sun azimuth: ${Number(f.properties.sun_azimuth).toFixed(1)}°<br/>
+//         Confidence: ${(f.properties.confidence * 100).toFixed(0)}%
+//       </div>
+//     `)
+//     .addTo(map3d);
+// });
+
+
 map3d.on("mousemove", "building-shadows", e => {
-  const f = e.features[0];
+  const f = e.features && e.features[0];
   if (!f) return;
+
+  // 🔑 HARD GUARD
+  if (f.properties.kind !== "shadow") return;
+
+  console.log("🟢 SHADOW VALUES USED:", {
+    parent_building: f.properties.parent_building,
+    shadow_length_m: f.properties.shadow_length_m,
+    sun_azimuth: f.properties.sun_azimuth,
+    sun_elevation: f.properties.sun_elevation,
+    confidence: f.properties.confidence
+  });
+
+  map3d.getCanvas().style.cursor = "pointer";
 
   hoverPopup
     .setLngLat(e.lngLat)
     .setHTML(`
-      <div style="font-size:12px;color:#ff3333">
-        <b>${f.properties.id}</b><br/>
-        Shadow length: ${Number(f.properties.shadow_len).toFixed(2)} m<br/>
-        Azimuth: ${Number(f.properties.sun_azimuth).toFixed(1)}°
+      <div style="font-size:12px;color:#111">
+        <b>Shadow of ${f.properties.parent_building}</b><br/>
+        Shadow length: ${Number(f.properties.shadow_length_m).toFixed(2)} m<br/>
+        Sun azimuth: ${Number(f.properties.sun_azimuth).toFixed(12)}°<br/>
+        Sun elevation: ${Number(f.properties.sun_elevation).toFixed(12)}°<br/>
+        Confidence: ${(f.properties.confidence * 100).toFixed(0)}%
       </div>
     `)
     .addTo(map3d);
-});
 
+});
 
 
 // map3d.on("mouseleave", "buildings", () => {
@@ -1423,6 +1981,101 @@ map3d.on("mouseleave", "building-shadows", () => {
   hoverPopup.remove();
 });
 
+/* satellite view */
+
+function toggle3DStyle() {
+  viewStyleMode = (viewStyleMode === "satellite") ? "shadowmap" : "satellite";
+  apply3DStyleMode();
+}
+
+function apply3DStyleMode() {
+  if (!map3d) return;
+
+  // --- ids you already use ---
+  const RASTER_LAYER_ID = "custom-tiles-layer";
+  const BUILDINGS_LAYER_ID = "buildings";
+  const SHADOWS_LAYER_ID = "building-shadows";
+  const BG_LAYER_ID = "shadowmap-bg";
+
+  const isShadow = (viewStyleMode === "shadowmap");
+
+  // Ensure background layer exists (MapLibre supports "background" layer)
+  try {
+    if (!map3d.getLayer(BG_LAYER_ID)) {
+      map3d.addLayer({
+        id: BG_LAYER_ID,
+        type: "background",
+        paint: { "background-color": "#f6f0d6", "background-opacity": 1.0 }
+      }, RASTER_LAYER_ID); // insert before raster if possible
+    }
+  } catch (e) {
+    // if raster layer not yet added, background will be added later
+    // safe to ignore
+  }
+
+  // Background on/off
+  try {
+    if (map3d.getLayer(BG_LAYER_ID)) {
+      map3d.setLayoutProperty(BG_LAYER_ID, "visibility", isShadow ? "visible" : "none");
+      map3d.setPaintProperty(BG_LAYER_ID, "background-color", "#f6f0d6");
+      map3d.setPaintProperty(BG_LAYER_ID, "background-opacity", 1.0);
+    }
+  } catch(e){}
+
+  // Raster tiles fade/disable
+  try {
+    if (map3d.getLayer(RASTER_LAYER_ID)) {
+      map3d.setPaintProperty(RASTER_LAYER_ID, "raster-opacity", isShadow ? 0.12 : 1.0);
+      map3d.setLayoutProperty(RASTER_LAYER_ID, "visibility", "visible"); // keep layer alive
+    }
+  } catch(e){}
+
+  // Buildings color change
+  try {
+    if (map3d.getLayer(BUILDINGS_LAYER_ID)) {
+      if (isShadow) {
+        // Solid dark grey blocks (still respects hover/selected if you want)
+        map3d.setPaintProperty(BUILDINGS_LAYER_ID, "fill-extrusion-color", [
+          "case",
+          ["boolean", ["feature-state", "selected"], false], "#00FFFF",
+          ["boolean", ["feature-state", "hover"], false], "#8000FF",
+          "#2f2f2f" // dark grey blocks
+        ]);
+        map3d.setPaintProperty(BUILDINGS_LAYER_ID, "fill-extrusion-opacity", 0.95);
+      } else {
+        // Restore your confidence-based colors
+        map3d.setPaintProperty(BUILDINGS_LAYER_ID, "fill-extrusion-color", [
+          "case",
+          ["boolean", ["feature-state", "selected"], false], "#00FFFF",
+          ["boolean", ["feature-state", "hover"], false], "#8000FF",
+          ["interpolate", ["linear"], ["get", "confidence"],
+            0.4, "#00FF99",
+            0.7, "#00FF99",
+            0.9, "#00FF99"
+          ]
+        ]);
+        map3d.setPaintProperty(BUILDINGS_LAYER_ID, "fill-extrusion-opacity", 0.85);
+      }
+    }
+  } catch(e){}
+
+  // Optional: shadows layer visibility (up to you)
+  try {
+    if (map3d.getLayer(SHADOWS_LAYER_ID)) {
+      map3d.setLayoutProperty(SHADOWS_LAYER_ID, "visibility", isShadow ? "none" : "visible");
+    }
+  } catch(e){}
+
+  showToast(
+    isShadow
+      ? `<b>🟨 Shadowmap view</b><div class="small">Buildings only (dark grey) on light background</div>`
+      : `<b>🛰 Satellite view</b><div class="small">Raster tiles + normal building colors</div>`,
+    2200
+  );
+}
+
+
+
 
 /* P2P distance calculator */
 
@@ -1444,7 +2097,7 @@ function showToast(html, ms = 2200) {
 // ---------- Mode helpers ----------
 function isAnyDrawingModeActive() {
   // If any of these are true, DO NOT show "point info" click popups
-  return !!(feedbackMode || yoloMode || aoiDrawActive || p2pMode);
+  return !!(feedbackMode || yoloMode || aoiDrawActive || p2pMode || manualBuildMode );
 }
 
 // ---------- Distance helpers ----------
@@ -1584,7 +2237,7 @@ function addLeafletLine(a, b, distanceMeters, segIndex) {
 
 
 function addMapboxLabel(lng, lat, html) {
-  const popup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 12 })
+  const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 })
     .setLngLat([lng, lat])
     .setHTML(`<div style="
       background: rgba(255,255,255,0.92);
@@ -1609,7 +2262,7 @@ function addMapboxDot(lng, lat) {
   el.style.borderRadius = "50%";
   el.style.border = "2px solid #fff";
   el.style.background = "#2563eb";
-  const mk = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map3d);
+  const mk = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map3d);
   p2pMarkers3D.push(mk);
   return mk;
 }
@@ -1791,7 +2444,7 @@ function showPointInfo(lng, lat, source = "2d") {
     // close previous 3D popup
     closePointInfo("3d");
 
-    const pop = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 12 })
+    const pop = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 })
       .setLngLat([lng, lat])
       .setHTML(html)
       .addTo(map3d);
@@ -2434,7 +3087,143 @@ document.querySelectorAll('input[name="fbType"]').forEach(r => {
 })();
 
 
+function unloadPrebuildLayers() {
+  // remove layers first
+  if (map3d.getLayer("building-shadows")) {
+    map3d.removeLayer("building-shadows");
+  }
+
+  if (map3d.getLayer("buildings")) {
+    map3d.removeLayer("buildings");
+  }
+
+  // then remove source
+  if (map3d.getSource("buildings")) {
+    map3d.removeSource("buildings");
+  }
+}
+
+async function togglePrebuildAll() {
+
+  // ---------- TURN OFF PREBUILD ----------
+  if (prebuildActive) {
+  prebuildActive = false;
+
+  unloadPrebuildLayers();   // 🔑 correct cleanup
+
+  show2DView();
+  modelLoaded = false;
+
+  showToast(
+    `<b>🗺 Normal 2D map</b><div class="small">Prebuild view disabled</div>`,
+    1800
+  );
+
+  return;
+}
+
+  // ---------- TURN ON PREBUILD ----------
+  try {
+    showLoading("Loading prebuilt 3D map…");
+
+    const res = await fetch("/manual_build/prebuild/all");
+    const data = await res.json();
+
+    if (!data.exists) {
+      hideLoading();
+      showToast(
+        `<b>⚠ No prebuild available</b><div class="small">Save a manual build first</div>`,
+        2600
+      );
+      return;
+    }
+
+    show3DView();
+    // 🔑 ensure no stale source exists
+    unloadPrebuildLayers();
+    loadBuildings(data.geojson);
+    apply3DStyleMode();
+
+    map3d.once("idle", () => {
+      hideLoading();
+      prebuildActive = true;
+      prebuildLoadedOnce = true;
+      modelLoaded = true;
+
+      showToast(
+        `<b>🏙 Prebuilt 3D map</b><div class="small">${data.runs} runs merged</div>`,
+        2200
+      );
+    });
+
+  } catch (e) {
+    hideLoading();
+    console.error(e);
+    showToast(`<b>❌ Failed to load prebuild</b>`, 2000);
+  }
+}
+
+function exportPrebuild(fmt) {
+  if (!prebuildActive) {
+    showToast(
+      `<b>⚠ Prebuild not active</b><div class="small">Enable Prebuild View first</div>`,
+      2200
+    );
+    return;
+  }
+
+  const url = `/manual_build/prebuild/export/${fmt}`;
+  window.open(url, "_blank");
+}
+
+async function togglePrebuildView() {
+  const res = await fetch("/manual_build/prebuild/all");
+  const data = await res.json();
+
+  if (!data.exists) {
+    showToast("❌ No prebuilt map available");
+    return;
+  }
+
+  show3DView();
+  loadBuildings(data.geojson);
+  apply3DStyleMode();
+}
+
+
+
+window.addEventListener("load", async () => {
+  try {
+    const res = await fetch("/manual_build/prebuild/all");
+    const data = await res.json();
+
+    //if (!data.exists) return;
+
+    if (true) return;
+
+    // Load like ML output (same pipeline)
+    show3DView();
+    showLoading("Loading prebuilt 3D map…");
+
+    loadBuildings(data.geojson);   // existing function
+    apply3DStyleMode();
+
+    map3d.once("idle", () => {
+      hideLoading();
+      showToast("<b>🧱 Prebuilt map loaded</b>", 1800);
+    });
+
+  } catch (e) {
+    console.warn("No prebuild map found");
+  }
+});
+
+
 </script>
+
+<button onclick="togglePrebuildAll()" style="position:absolute; bottom:12px; left:12px; z-index:9999;">
+🧱 Prebuild View
+</button>
 
 </body>
 </html>

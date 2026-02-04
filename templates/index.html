@@ -236,16 +236,16 @@ html, body { margin:0; height:100%; }
 </div>
 <!-- LEFT PANEL -->
 <div class="panel-left">
-  <button onclick="enableAOISelection()">🟨 Select AOI</button>
+  <!-- <button onclick="enableAOISelection()">🟨 Select AOI</button>
   <button id="runBtn" onclick="runAOIML()">🚀 Run ML</button>
-  <button onclick="toggleTiles()">🟪 Toggle Tiles</button>
+  <button onclick="toggleTiles()">🟪 Toggle Tiles</button> -->
   <button id="p2pBtn" onclick="toggleP2PDistance()">📏 P2P Distance</button>
   <button onclick="toggle3DStyle()">🗺 View: Satellite / Shadowmap</button>
 
-  <div id="aoiInfo">AOI: not selected</div>
+  <!-- <div id="aoiInfo">AOI: not selected</div> -->
 
   <hr/>
-<b>Rotate 2D Map</b><br/>
+<!-- <b>Rotate 2D Map</b><br/>
 
 <input
   type="range"
@@ -255,13 +255,13 @@ html, body { margin:0; height:100%; }
   id="rotationSlider"
   style="width:100%;"
   oninput="rotateMap2D(this.value)"
-/>
+/> -->
 
-<div style="font-size:12px; text-align:center;">
+<!-- <div style="font-size:12px; text-align:center;">
   <span id="rotationValue">0°</span>
 </div>
 
-<button onclick="resetRotation()">Reset Rotation</button>
+<button onclick="resetRotation()">Reset Rotation</button> -->
 
 </div>
 
@@ -269,10 +269,13 @@ html, body { margin:0; height:100%; }
 <div class="panel-right">
   <button onclick="toggle3DView()">🧭 Toggle 3D / Top</button>
   <button onclick="toggleImportPanel()">📥 Import (GeoJSON / GLB)</button>
-  <button onclick="enableFeedbackMode()">🧠 Improve Model</button>
-  <button onclick="enableYOLOFeedback()">📦 Improve Detector (YOLO)</button>
-  <button onclick="enableManualBuildMode()">🏗 Manual Build Map</button>
-  <button onclick="saveManualBuild()">💾 Save Manual Map</button>
+  <!-- <button onclick="enableFeedbackMode()">🧠 Improve Model</button>
+  <button onclick="enableYOLOFeedback()">📦 Improve Detector (YOLO)</button> -->
+  <!-- <button onclick="enableManualBuildMode()">🏗 Manual Build Map</button>
+  <button onclick="saveManualBuild()">💾 Save Manual Map</button> -->
+  <button onclick="exportPrebuild('geojson')">⬇ Export GeoJSON</button>
+  <button onclick="exportPrebuild('glb')">⬇ Export GLB</button>
+
   <button onclick="clearAll()">♻ Clear</button>
 
 </div>
@@ -605,6 +608,7 @@ async function downloadAOIGeoTiff() {
 
 
 function toggleImportPanel() {
+  clearAll();
   const panel = document.getElementById("importPanel");
   if (!panel) return;
 
@@ -667,6 +671,8 @@ function clearImported() {
 
   const inp = document.getElementById("importFileInput");
   if (inp) inp.value = "";
+
+
 
   updateImportUI();
   showToast(`<b>🧹 Cleared import selection</b>`, 1500);
@@ -1050,6 +1056,9 @@ let feedbackMode = false;
 let feedbackPoints = [];
 let selectedOriginalGeometry = null;
 let highlightedFeatureId = null;
+
+let prebuildActive = false;        // 🔑 is prebuild currently shown
+let prebuildLoadedOnce = false;   // 🔑 optional, for future use
 
 const aoiLayer = new L.FeatureGroup();
 const feedbackLayer = new L.FeatureGroup();
@@ -1634,18 +1643,20 @@ function ensureP2PLineLayer() {
     }
   });
 
-  map3d.on("mousemove", "p2p-lines-layer", (e) => {
-    map3d.getCanvas().style.cursor = "pointer";
-    const f = e.features && e.features[0];
-    if (!f) return;
+  // map3d.on("mousemove", "p2p-lines-layer", (e) => {
+  //   map3d.getCanvas().style.cursor = "pointer";
+  //   const f = e.features && e.features[0];
+  //   if (!f) return;
 
-    const html = `<div class="p2p-label" style="min-width:120px;">
-      <b>Segment ${f.properties.seg}</b>
-      <div class="p2p-small">Distance: ${f.properties.dist}</div>
-    </div>`;
+  //   const html = `<div class="p2p-label" style="min-width:120px;">
+  //     <b>Segment ${f.properties.seg}</b>
+  //     <div class="p2p-small">Distance: ${f.properties.dist}</div>
+  //   </div>`;
 
-    p2pLineHoverPopup.setLngLat(e.lngLat).setHTML(html).addTo(map3d);
-  });
+  //   p2pLineHoverPopup.setLngLat(e.lngLat).setHTML(html).addTo(map3d);
+  // });
+
+
 
   map3d.on("mouseleave", "p2p-lines-layer", () => {
     map3d.getCanvas().style.cursor = "";
@@ -1893,9 +1904,40 @@ map3d.on("mousemove", "buildings", e => {
 });
 
 
+// map3d.on("mousemove", "building-shadows", e => {
+//   const f = e.features[0];
+//   if (!f) return;
+
+//   map3d.getCanvas().style.cursor = "pointer";
+
+//   hoverPopup
+//     .setLngLat(e.lngLat)
+//     .setHTML(`
+//       <div style="font-size:12px;color:#111">
+//         <b>Shadow of ${f.properties.parent_building}</b><br/>
+//         Shadow length: ${Number(f.properties.shadow_length_m).toFixed(2)} m<br/>
+//         Sun azimuth: ${Number(f.properties.sun_azimuth).toFixed(1)}°<br/>
+//         Confidence: ${(f.properties.confidence * 100).toFixed(0)}%
+//       </div>
+//     `)
+//     .addTo(map3d);
+// });
+
+
 map3d.on("mousemove", "building-shadows", e => {
-  const f = e.features[0];
+  const f = e.features && e.features[0];
   if (!f) return;
+
+  // 🔑 HARD GUARD
+  if (f.properties.kind !== "shadow") return;
+
+  console.log("🟢 SHADOW VALUES USED:", {
+    parent_building: f.properties.parent_building,
+    shadow_length_m: f.properties.shadow_length_m,
+    sun_azimuth: f.properties.sun_azimuth,
+    sun_elevation: f.properties.sun_elevation,
+    confidence: f.properties.confidence
+  });
 
   map3d.getCanvas().style.cursor = "pointer";
 
@@ -1905,14 +1947,14 @@ map3d.on("mousemove", "building-shadows", e => {
       <div style="font-size:12px;color:#111">
         <b>Shadow of ${f.properties.parent_building}</b><br/>
         Shadow length: ${Number(f.properties.shadow_length_m).toFixed(2)} m<br/>
-        Sun azimuth: ${Number(f.properties.sun_azimuth).toFixed(1)}°<br/>
+        Sun azimuth: ${Number(f.properties.sun_azimuth).toFixed(12)}°<br/>
+        Sun elevation: ${Number(f.properties.sun_elevation).toFixed(12)}°<br/>
         Confidence: ${(f.properties.confidence * 100).toFixed(0)}%
       </div>
     `)
     .addTo(map3d);
+
 });
-
-
 
 
 // map3d.on("mouseleave", "buildings", () => {
@@ -3045,9 +3087,97 @@ document.querySelectorAll('input[name="fbType"]').forEach(r => {
 })();
 
 
+function unloadPrebuildLayers() {
+  // remove layers first
+  if (map3d.getLayer("building-shadows")) {
+    map3d.removeLayer("building-shadows");
+  }
+
+  if (map3d.getLayer("buildings")) {
+    map3d.removeLayer("buildings");
+  }
+
+  // then remove source
+  if (map3d.getSource("buildings")) {
+    map3d.removeSource("buildings");
+  }
+}
+
+async function togglePrebuildAll() {
+
+  // ---------- TURN OFF PREBUILD ----------
+  if (prebuildActive) {
+  prebuildActive = false;
+
+  unloadPrebuildLayers();   // 🔑 correct cleanup
+
+  show2DView();
+  modelLoaded = false;
+
+  showToast(
+    `<b>🗺 Normal 2D map</b><div class="small">Prebuild view disabled</div>`,
+    1800
+  );
+
+  return;
+}
+
+  // ---------- TURN ON PREBUILD ----------
+  try {
+    showLoading("Loading prebuilt 3D map…");
+
+    const res = await fetch("/manual_build/prebuild/all");
+    const data = await res.json();
+
+    if (!data.exists) {
+      hideLoading();
+      showToast(
+        `<b>⚠ No prebuild available</b><div class="small">Save a manual build first</div>`,
+        2600
+      );
+      return;
+    }
+
+    show3DView();
+    // 🔑 ensure no stale source exists
+    unloadPrebuildLayers();
+    loadBuildings(data.geojson);
+    apply3DStyleMode();
+
+    map3d.once("idle", () => {
+      hideLoading();
+      prebuildActive = true;
+      prebuildLoadedOnce = true;
+      modelLoaded = true;
+
+      showToast(
+        `<b>🏙 Prebuilt 3D map</b><div class="small">${data.runs} runs merged</div>`,
+        2200
+      );
+    });
+
+  } catch (e) {
+    hideLoading();
+    console.error(e);
+    showToast(`<b>❌ Failed to load prebuild</b>`, 2000);
+  }
+}
+
+function exportPrebuild(fmt) {
+  if (!prebuildActive) {
+    showToast(
+      `<b>⚠ Prebuild not active</b><div class="small">Enable Prebuild View first</div>`,
+      2200
+    );
+    return;
+  }
+
+  const url = `/manual_build/prebuild/export/${fmt}`;
+  window.open(url, "_blank");
+}
 
 async function togglePrebuildView() {
-  const res = await fetch("/manual_build/prebuild/latest");
+  const res = await fetch("/manual_build/prebuild/all");
   const data = await res.json();
 
   if (!data.exists) {
@@ -3064,7 +3194,7 @@ async function togglePrebuildView() {
 
 window.addEventListener("load", async () => {
   try {
-    const res = await fetch("/manual_build/prebuild/latest");
+    const res = await fetch("/manual_build/prebuild/all");
     const data = await res.json();
 
     if (!data.exists) return;
@@ -3089,7 +3219,7 @@ window.addEventListener("load", async () => {
 
 </script>
 
-<button onclick="togglePrebuildView()" style="position:absolute; bottom:12px; left:12px; z-index:9999;">
+<button onclick="togglePrebuildAll()" style="position:absolute; bottom:12px; left:12px; z-index:9999;">
 🧱 Prebuild View
 </button>
 

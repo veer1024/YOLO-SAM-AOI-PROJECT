@@ -18,18 +18,18 @@ def shadow_metrics_from_polygons(
     sun_elevation_deg,
 ):
     """
-    Computes:
-    - physically correct shadow length (meters)
-    - building height (meters)
-    - confidence score (0–1)
+    Physically correct shadow length & height computation.
 
-    Uses sun-facing building corner as origin.
+    Shadow length is measured along sun direction as:
+      max(shadow_proj) - max(building_proj)
+
+    This avoids diagonal/corner overestimation.
     """
 
-    if sun_elevation_deg <= 2.0:
+    if sun_elevation_deg <= 1.0:
         return None, None, 0.0
 
-    # ---- project to meters ----
+    # Project to meters
     project = pyproj.Transformer.from_crs(
         "EPSG:4326", "EPSG:3857", always_xy=True
     ).transform
@@ -37,46 +37,40 @@ def shadow_metrics_from_polygons(
     b = shp_transform(project, building_geom)
     s = shp_transform(project, shadow_geom)
 
-    # ---- sun direction (unit vector) ----
+    # Sun direction (shadow goes opposite sun)
     az = math.radians(sun_azimuth_deg)
-    sun_vec = (math.sin(az), math.cos(az))
+    sun_vec = (-math.sin(az), -math.cos(az))
 
-    # ---- choose sun-facing building corner ----
-    best_origin = None
-    best_score = -1e9
-
+    # ---- project building onto sun axis ----
+    building_proj = []
     for x, y in b.exterior.coords:
-        score = x * sun_vec[0] + y * sun_vec[1]
-        if score > best_score:
-            best_score = score
-            best_origin = (x, y)
+        building_proj.append(x * sun_vec[0] + y * sun_vec[1])
 
-    ox, oy = best_origin
+    # This is the sun-facing building edge position
+    b_max = max(building_proj)
 
-    # ---- project shadow points ----
-    projections = []
+    # ---- project shadow onto sun axis ----
+    shadow_proj = []
     for x, y in s.exterior.coords:
-        vx = x - ox
-        vy = y - oy
-        proj = vx * sun_vec[0] + vy * sun_vec[1]
-        if proj > 0:
-            projections.append(proj)
+        shadow_proj.append(x * sun_vec[0] + y * sun_vec[1])
 
-    if not projections:
+    s_max = max(shadow_proj)
+
+    # ---- physically correct shadow length ----
+    shadow_len = s_max - b_max
+
+    # Reject nonsense
+    if shadow_len <= 0 or shadow_len > 200:
         return None, None, 0.0
 
-    shadow_len = max(projections)
+    # ---- trigonometry ----
+    height = shadow_len * math.tan(math.radians(sun_elevation_deg))
 
-    # ---- trigonometric height ----
-    elev = math.radians(sun_elevation_deg)
-    height = shadow_len * math.tan(elev)
+    # ---- confidence (manual input = high) ----
+    confidence = 0.95 if height < 30 else 0.8
 
-    # ---- confidence estimation ----
-    # stability = how many shadow points support the max
-    support = sum(1 for p in projections if p > 0.85 * shadow_len)
-    confidence = min(0.99, max(0.8, support / len(projections)))
+    return round(shadow_len, 2), round(height, 2), confidence
 
-    return float(shadow_len), float(height), round(confidence, 2)
 
 
 
@@ -142,7 +136,8 @@ def height_from_shadow_trigonometry(
 
     # ---- sun direction vector (unit) ----
     az = math.radians(sun_azimuth_deg)
-    sun_vec = (math.sin(az), math.cos(az))  # azimuth from north
+    #sun_vec = (math.sin(az), math.cos(az))  # azimuth from north
+    sun_vec = (-math.sin(az), -math.cos(az))
 
     # ---- compute shadow length by projection ----
     max_proj = 0.0

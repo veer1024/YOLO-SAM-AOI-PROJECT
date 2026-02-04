@@ -40,6 +40,82 @@ import pyproj
 IMAGE_ACQ_TIME = "2021-02-27T04:56:00.3+00:00"
 
 # ----------------------------
+
+# PRE BUILD HELPERS 
+
+# ---------------------------
+
+def merge_all_prebuild_geojson(prebuild_dir, out_path):
+    features = []
+
+    for fname in os.listdir(prebuild_dir):
+        if not fname.endswith(".geojson"):
+            continue
+        if fname.startswith("_all"):
+            continue
+
+        fpath = os.path.join(prebuild_dir, fname)
+        try:
+            with open(fpath) as f:
+                data = json.load(f)
+            feats = data.get("features", [])
+            features.extend(feats)
+        except Exception:
+            logging.exception("Failed to read %s", fpath)
+
+    merged = {
+        "type": "FeatureCollection",
+        "features": features
+    }
+
+    with open(out_path, "w") as f:
+        json.dump(merged, f, indent=2)
+
+    return out_path
+
+
+
+def merge_all_prebuild_glb(prebuild_dir, out_path):
+    meshes = []
+
+    for fname in os.listdir(prebuild_dir):
+        if not fname.endswith(".geojson"):
+            continue
+        if fname.startswith("_all"):
+            continue
+
+        geojson_path = os.path.join(prebuild_dir, fname)
+
+        try:
+            with open(geojson_path) as f:
+                data = json.load(f)
+        except Exception:
+            continue
+
+        for feat in data.get("features", []):
+            if feat.get("properties", {}).get("kind") != "building":
+                continue
+
+            geom = shape(feat["geometry"])
+            h = float(feat["properties"].get("height", 6.0))
+
+            try:
+                mesh = shapely_to_trimesh_extruded(geom, h)
+                mesh.metadata["height"] = h
+                mesh.metadata["kind"] = "building"
+                meshes.append(mesh)
+            except Exception:
+                logging.exception("Failed to build mesh from %s", fname)
+
+    if not meshes:
+        raise RuntimeError("No building meshes found to merge")
+
+    export_glb(meshes, out_path)
+    return out_path
+
+
+
+# ----------------------------
 # LOGGING
 # ----------------------------
 logger = logging.getLogger()
@@ -179,6 +255,7 @@ def build_manual_geojson_to_path(
                 "parent_building": b.get("id", f"building_{idx}"),
                 "shadow_length_m": shadow_len,
                 "sun_azimuth": float(sun_azimuth),
+                "sun_elevation": float(sun_elevation),
                 "confidence": confidence
             }
         })
@@ -364,6 +441,69 @@ def get_latest_prebuild():
         "exists": True,
         "geojson": f"manual_build/prebuild/{name}.geojson",
         "glb": f"manual_build/prebuild/{name}.glb"
+    })
+
+
+@app.route("/manual_build/prebuild/export/<fmt>")
+def export_prebuild(fmt):
+    PREBUILD_DIR = "ml/manual_build/prebuild"
+
+    geojson_path = os.path.join(PREBUILD_DIR, "_all.geojson")
+    glb_path = os.path.join(PREBUILD_DIR, "_all.glb")
+
+    if not os.path.exists(geojson_path) or not os.path.exists(glb_path):
+        return jsonify({
+            "error": "Prebuild not available. Load prebuild first."
+        }), 404
+
+    if fmt == "geojson":
+        return send_file(
+            geojson_path,
+            as_attachment=True,
+            download_name="prebuild_map.geojson",
+            mimetype="application/json"
+        )
+
+    if fmt == "glb":
+        return send_file(
+            glb_path,
+            as_attachment=True,
+            download_name="prebuild_map.glb",
+            mimetype="model/gltf-binary"
+        )
+
+    return jsonify({"error": "Invalid format"}), 400
+
+
+@app.route("/manual_build/prebuild/all")
+def get_all_prebuild():
+    PREBUILD_DIR = "ml/manual_build/prebuild"
+    if not os.path.isdir(PREBUILD_DIR):
+        return jsonify({"exists": False})
+
+    geojson_files = [
+        f for f in os.listdir(PREBUILD_DIR)
+        if f.endswith(".geojson") and not f.startswith("_all")
+    ]
+
+    if not geojson_files:
+        return jsonify({"exists": False})
+
+    merged_geojson = os.path.join(PREBUILD_DIR, "_all.geojson")
+    merged_glb     = os.path.join(PREBUILD_DIR, "_all.glb")
+
+    try:
+        merge_all_prebuild_geojson(PREBUILD_DIR, merged_geojson)
+        merge_all_prebuild_glb(PREBUILD_DIR, merged_glb)
+    except Exception as e:
+        logging.exception("Failed to merge prebuild runs")
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({
+        "exists": True,
+        "geojson": "manual_build/prebuild/_all.geojson",
+        "glb": "manual_build/prebuild/_all.glb",
+        "runs": len(geojson_files)
     })
 
 
@@ -950,6 +1090,14 @@ def feedback_yolo():
 @app.route("/")
 def index():
     return render_template("index.html")
+
+@app.route("/aoi")
+def aoi_page():
+    return render_template("aoi.html")
+
+@app.route("/build")
+def build_page():
+    return render_template("build.html")
 
 # ----------------------------
 # TILE SERVER

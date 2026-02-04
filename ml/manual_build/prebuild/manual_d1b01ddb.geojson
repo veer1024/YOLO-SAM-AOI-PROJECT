@@ -1,0 +1,100 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              89.542278,
+              28.876908
+            ],
+            [
+              89.542276,
+              28.877056
+            ],
+            [
+              89.542899,
+              28.877058
+            ],
+            [
+              89.542901,
+              28.876911
+            ],
+            [
+              89.542278,
+              28.876908
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": "bldg_1",
+        "kind": "building",
+        "source": "prebuild",
+        "height": 14.03,
+        "sun_azimuth": 150.00054135250767,
+        "sun_elevation": 48.32500907609335,
+        "confidence": 0.7
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              89.542274,
+              28.876917
+            ],
+            [
+              89.542229,
+              28.876959
+            ],
+            [
+              89.54223,
+              28.877044
+            ],
+            [
+              89.542199,
+              28.877072
+            ],
+            [
+              89.542198,
+              28.87713
+            ],
+            [
+              89.542811,
+              28.877132
+            ],
+            [
+              89.542868,
+              28.877058
+            ],
+            [
+              89.542274,
+              28.877056
+            ],
+            [
+              89.542274,
+              28.876917
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": "bldg_1_shadow",
+        "kind": "shadow",
+        "source": "prebuild",
+        "parent_building": "bldg_1",
+        "shadow_length_m": 12.49,
+        "sun_azimuth": 150.00054135250767,
+        "sun_elevation": 48.32500907609335,
+        "confidence": 0.95
+      }
+    }
+  ]
+}

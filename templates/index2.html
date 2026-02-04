@@ -1,0 +1,1694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LOD 2.5 – AOI Building Elevation</title>
+
+
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+<!-- Leaflet Draw -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+
+<!-- Mapbox -->
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet"/>
+
+<style>
+
+/* Fullscreen loading overlay */
+  #loadingOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 99999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(2px);
+  }
+
+  #loadingOverlay .panel {
+    background: #111;
+    color: #fff;
+    padding: 18px 22px;
+    border-radius: 12px;
+    min-width: 260px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  }
+
+  #loadingOverlay .spinner {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.25);
+    border-top-color: rgba(255,255,255,0.95);
+    animation: spin 0.9s linear infinite;
+  }
+
+  #loadingOverlay .text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    line-height: 1.2;
+  }
+
+  #loadingOverlay .text .title {
+    font-weight: 650;
+    font-size: 14px;
+  }
+
+  #loadingOverlay .text .subtitle {
+    font-size: 12px;
+    opacity: 0.85;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Optional: visually disable RUN while loading */
+  .is-loading {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+html, body { margin:0; height:100%; }
+
+
+/* 2D rotation wrapper */
+#map2d-wrapper {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* actual map */
+#map2d {
+  transform-origin: center center;
+  transition: transform 0.1s linear;
+}
+
+#map2d, #map3d { position:absolute; inset:0; }
+#map3d { display:none; }
+
+.panel-left, .panel-right {
+  position:absolute;
+  top:10px;
+  z-index:9999;
+  background:#fff;
+  padding:10px;
+  border-radius:6px;
+  font-family:sans-serif;
+  box-shadow:0 2px 10px rgba(0,0,0,0.3);
+}
+
+.panel-left { left:50px; width:220px; }
+.panel-right { right:10px; width:220px; }
+
+.panel-left button,
+.panel-right button {
+  width:100%;
+  margin-bottom:6px;
+}
+
+#aoiInfo {
+  font-size:13px;
+  margin-top:6px;
+  color:#333;
+}
+</style>
+</head>
+
+<body>
+<div id="loadingOverlay" aria-live="polite" aria-busy="true">
+  <div class="panel">
+    <div class="spinner"></div>
+    <div class="text">
+      <div class="title">Running model…</div>
+      <div class="subtitle">Please wait while 3D buildings are generated</div>
+    </div>
+  </div>
+
+</div>
+<!-- LEFT PANEL -->
+<div class="panel-left">
+  <button onclick="enableAOISelection()">🟨 Select AOI</button>
+  <button id="runBtn" onclick="runAOIML()">🚀 Run ML</button>
+  <button onclick="toggleTiles()">🟪 Toggle Tiles</button>
+  <div id="aoiInfo">AOI: not selected</div>
+
+  <hr/>
+<b>Rotate 2D Map</b><br/>
+
+<input
+  type="range"
+  min="-180"
+  max="180"
+  value="0"
+  id="rotationSlider"
+  style="width:100%;"
+  oninput="rotateMap2D(this.value)"
+/>
+
+<div style="font-size:12px; text-align:center;">
+  <span id="rotationValue">0°</span>
+</div>
+
+<button onclick="resetRotation()">Reset Rotation</button>
+
+</div>
+
+<!-- RIGHT PANEL -->
+<div class="panel-right">
+  <button onclick="toggle3DView()">🧭 Toggle 3D / Top</button>
+  <button onclick="enableFeedbackMode()">🧠 Improve Model</button>
+  <button onclick="enableYOLOFeedback()">📦 Improve Detector (YOLO)</button>
+  <button onclick="clearAll()">♻ Clear</button>
+</div>
+
+<!-- FEEDBACK PANEL -->
+<div id="feedbackPanel" class="panel-right" style="top:160px; display:none;">
+  <b>Improve Model</b><br/><br/>
+
+  <label>
+    <input type="radio" name="fbType" value="missing_building" checked>
+    Missing Building
+  </label><br/>
+
+  <label>
+    <input type="radio" name="fbType" value="wrong_geometry">
+    Wrong Geometry
+  </label><br/>
+
+  <button id="addPolyBtn" onclick="finalizeAndStartNextPolygon()" style="display:none" disabled>
+  ➕ Add another polygon (WRONG GEOMETRY)
+</button><!-- <br/> -->
+<div id="polyCount" style="display:none; font-size:12px; margin:6px 0; opacity:0.8;">
+  Polygons ready: 0
+</div>
+<br/>
+
+  <label>
+    <input type="radio" name="fbType" value="not_a_building">
+    🚫 Not a Building
+  </label><br/><br/>
+
+  <small>
+  • Click to draw building footprint (polygon)<br/>
+  • Double-click to finish
+</small><br/><br/>
+
+
+
+  <button onclick="submitFeedback()">✅ Submit</button>
+  <button onclick="cancelFeedback()">❌ Cancel</button>
+</div>
+
+
+<!-- YOLO FEEDBACK PANEL -->
+<div id="yoloPanel" class="panel-right" style="top:300px; display:none;">
+  <b>Improve YOLO</b><br/><br/>
+
+  <label>
+    <input type="radio" name="yoloType" value="missing_building" checked>
+    Missing Building
+  </label><br/>
+
+  <label>
+    <input type="radio" name="yoloType" value="not_a_building">
+    🚫 Not a Building
+  </label><br/><br/>
+
+  <small>
+    • Draw a bounding box<br/>
+    • One box at a time
+  </small><br/><br/>
+
+  <button onclick="submitYOLOFeedback()">✅ Submit</button>
+  <button onclick="cancelYOLOFeedback()">❌ Cancel</button>
+</div>
+
+
+<div id="map2d-wrapper">
+  <div id="map2d"></div>
+</div>
+
+
+<div id="map3d"></div>
+
+<!-- LIBS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+
+<!-- Geometry Util (CRITICAL) -->
+<script src="https://unpkg.com/leaflet-geometryutil@0.10.1/src/leaflet.geometryutil.js"></script>
+
+
+
+<script>
+
+
+/* loader for ml run =============== */
+
+function disableMapInteraction(map) {
+  if (!map) return;
+  try {
+    map.dragging.disable();
+    map.scrollWheelZoom.disable();
+    map.doubleClickZoom.disable();
+    map.boxZoom.disable();
+    map.keyboard.disable();
+    map.touchZoom.disable();
+    if (map.tap) map.tap.disable();
+    map._container.style.cursor = "wait";
+  } catch (e) {
+    console.warn("Failed to disable map interaction:", e);
+  }
+}
+
+function enableMapInteraction(map) {
+  if (!map) return;
+  try {
+    map.dragging.enable();
+    map.scrollWheelZoom.enable();
+    map.doubleClickZoom.enable();
+    map.boxZoom.enable();
+    map.keyboard.enable();
+    map.touchZoom.enable();
+    if (map.tap) map.tap.enable();
+    map._container.style.cursor = "";
+  } catch (e) {
+    console.warn("Failed to enable map interaction:", e);
+  }
+}
+
+ let _modelRunning = false;
+
+  function showLoading(message) {
+    const overlay = document.getElementById("loadingOverlay");
+    if (!overlay) return;
+
+    if (message) {
+      const subtitle = overlay.querySelector(".subtitle");
+      if (subtitle) subtitle.textContent = message;
+    }
+
+    overlay.style.display = "flex";
+    _modelRunning = true;
+
+    // Disable UI controls if you have a RUN button
+    const runBtn = document.getElementById("runBtn"); // <-- change id if your button differs
+    if (runBtn) runBtn.classList.add("is-loading");
+
+    // Disable map
+    disableMapInteraction(map2d);
+    disableMapboxInteraction(map3d);
+  }
+
+  function hideLoading() {
+    const overlay = document.getElementById("loadingOverlay");
+    if (overlay) overlay.style.display = "none";
+    _modelRunning = false;
+
+    const runBtn = document.getElementById("runBtn"); // <-- change id if your button differs
+    if (runBtn) runBtn.classList.remove("is-loading");
+
+    enableMapInteraction(map2d);
+    enableMapboxInteraction(map3d);
+  }
+
+  // Safety: if page reloads mid-run
+  window.addEventListener("beforeunload", () => {
+    if (_modelRunning) return "";
+  });
+
+/* ================= CONFIG ================= */
+
+mapboxgl.accessToken = "pk.eyJ1IjoidmVlcjEwMjQiLCJhIjoiY21pdTduMnJrMGg5djNxcjRydGp4czc3eiJ9.1qqR0xid2EBNBFNb4TmkMg";
+
+let feedbackPolygons = [];     // array of GeoJSON Polygon
+let currentPolygonLayer = null;
+
+
+const CENTER = [89.5348056, 28.8863333];
+
+
+
+const RASTER_BOUNDS = [
+  89.5145926,  // West
+  28.8721667,  // South
+  89.5550185,  // East
+  28.9005000   // North
+];
+
+/* ================= STATE ================= */
+
+let aoiRect = null;
+let modelLoaded = false;
+let viewMode = "3d";
+
+let feedbackMode = false;
+let feedbackPoints = [];
+let selectedOriginalGeometry = null;
+let highlightedFeatureId = null;
+
+const aoiLayer = new L.FeatureGroup();
+const feedbackLayer = new L.FeatureGroup();
+const tileDebugLayer = L.layerGroup();
+let aoiDrawActive = false;
+
+
+ let yoloMode = false;
+
+let yoloRectLayer = null;
+let lastAOIBounds = null;   // [west,south,east,north] in EPSG:4326
+
+
+ function clearAllDrawControls() {
+  try { map2d.removeControl(drawControl); } catch(e){}
+  
+}
+
+/* ================= tile function ======== */
+
+function drawTiles(tileBoundsList) {
+  tileDebugLayer.clearLayers();
+
+  tileBoundsList.forEach((b, i) => {
+    const rect = L.rectangle(
+      [[b[1], b[0]], [b[3], b[2]]], // southWest, northEast
+      {
+        color: "#FF00FF",
+        weight: 1,
+        fillOpacity: 0.05,
+        dashArray: "4,4"
+      }
+    );
+
+    rect.bindTooltip(`Tile ${i + 1}`, { permanent: false });
+    tileDebugLayer.addLayer(rect);
+  });
+}
+
+
+let tilesVisible = true;
+
+function toggleTiles(){
+  tilesVisible = !tilesVisible;
+  if(tilesVisible){
+    map2d.addLayer(tileDebugLayer);
+  } else {
+    map2d.removeLayer(tileDebugLayer);
+  }
+}
+
+ // WRONG GEOMETRY HELPER FUNCTIONS 
+function setAddPolyEnabled(enabled) {
+  const btn = document.getElementById("addPolyBtn");
+  if (btn) btn.disabled = !enabled;
+}
+
+function updatePolyCount() {
+  const el = document.getElementById("polyCount");
+  if (el) el.textContent = `Polygons ready: ${feedbackPolygons.length}`;
+}
+
+function getCurrentDrawnPolygonIfReady() {
+  // only meaningful when we already formed a polygon preview
+  if (feedbackPoints.length < 3) return null;
+
+  // Close polygon with first point
+  const ring = [...feedbackPoints, feedbackPoints[0]];
+  return { type: "Polygon", coordinates: [ring] };
+}
+
+function redrawCurrentPolygonPreview() {
+  // remove old preview polygon if any
+  if (currentPolygonLayer) {
+    try { feedbackLayer.removeLayer(currentPolygonLayer); } catch(e){}
+    currentPolygonLayer = null;
+  }
+
+  if (feedbackPoints.length >= 3) {
+    const poly = getCurrentDrawnPolygonIfReady();
+    currentPolygonLayer = L.polygon(
+      poly.coordinates[0].map(p => [p[1], p[0]]),
+      { color: "orange", fillOpacity: 0.25 }
+    ).addTo(feedbackLayer);
+  }
+}
+
+function finalizeAndStartNextPolygon() {
+  const type = document.querySelector('input[name="fbType"]:checked').value;
+  if (type !== "wrong_geometry") return;
+
+  const poly = getCurrentDrawnPolygonIfReady();
+  if (!poly) {
+    alert("Draw at least 3 points first.");
+    return;
+  }
+
+
+  // Save polygon to array
+  feedbackPolygons.push(poly);
+  updatePolyCount();
+
+  // Make the saved polygon look “locked” (darker)
+  L.polygon(
+    poly.coordinates[0].map(p => [p[1], p[0]]),
+    { color: "orange", fillOpacity: 0.35, weight: 2 }
+  ).addTo(feedbackLayer);
+
+  // Reset current drawing points
+  feedbackPoints = [];
+
+  // Remove preview polygon (so user starts fresh)
+  if (currentPolygonLayer) {
+    try { feedbackLayer.removeLayer(currentPolygonLayer); } catch(e){}
+    currentPolygonLayer = null;
+  }
+
+  // Disable until 3 points again
+  setAddPolyEnabled(false);
+
+  
+// remove all temporary markers & preview only (but keep locked polygons)
+feedbackLayer.eachLayer(layer => {
+  // remove only CircleMarkers + currentPolygonLayer
+  if (layer instanceof L.CircleMarker) feedbackLayer.removeLayer(layer);
+});
+
+}
+/* ================= MAP 2D ================= */
+
+// const map2d = L.map("map2d").setView([CENTER[1], CENTER[0]], 19);
+// L.tileLayer("/tiles/{z}/{x}/{y}.png", { maxZoom:20 }).addTo(map2d);
+
+const map2d = L.map("map2d");
+
+const tiles2d = L.tileLayer("/tiles/{z}/{x}/{y}.png", { maxZoom: 20 }).addTo(map2d);
+
+tiles2d.on("loading", () => console.log("2D tiles loading..."));
+tiles2d.on("load", () => console.log("2D tiles loaded"));
+tiles2d.on("tileerror", (e) => console.log("2D tileerror:", e.coords, e.error));
+
+// Force correct sizing + zoom to raster area
+setTimeout(() => {
+  map2d.invalidateSize(true);
+  map2d.fitBounds(
+    [
+      [RASTER_BOUNDS[1], RASTER_BOUNDS[0]], // SW [lat,lng]
+      [RASTER_BOUNDS[3], RASTER_BOUNDS[2]]  // NE [lat,lng]
+    ],
+    { padding: [20, 20] }
+  );
+}, 150);
+
+
+map2d.addLayer(aoiLayer);
+map2d.addLayer(feedbackLayer);
+map2d.addLayer(tileDebugLayer);
+
+
+/* ================= MAP 2D rotation ================= */
+
+let currentRotation = 0;
+
+function rotateMap2D(deg){
+  currentRotation = deg;
+  document.getElementById("map2d").style.transform =
+    `rotate(${deg}deg)`;
+
+  document.getElementById("rotationValue").innerText = `${deg}°`;
+
+  if(deg != 0){
+  document.getElementById("aoiInfo").innerHTML =
+    `AOI: not selected<br/><small>⚠ Map rotated (${deg}°)</small>`;
+}
+
+
+  // 🔑 Important: fix mouse interaction after transform
+  map2d.invalidateSize();
+
+
+}
+
+function resetRotation(){
+  rotateMap2D(0);
+  document.getElementById("rotationSlider").value = 0;
+}
+
+
+/* =================== HELPER ================= */
+
+function setLastAOIFromRect() {
+  if (!aoiRect) return null;
+  const b = aoiRect.getBounds();
+  lastAOIBounds = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+  return lastAOIBounds;
+}
+
+function flyToAOI(bounds) {
+  // bounds = [west, south, east, north]
+  if (!bounds) return;
+
+  // IMPORTANT: call only when map3d is visible and resized
+  map3d.fitBounds(
+    [
+      [bounds[0], bounds[1]], // SW (lng, lat)
+      [bounds[2], bounds[3]]  // NE (lng, lat)
+    ],
+    {
+      padding: 80,
+      duration: 800,
+      pitch: (viewMode === "3d") ? 65 : 0,
+      bearing: (viewMode === "3d") ? -20 : 0
+    }
+  );
+}
+
+function resetPolygonState() {
+   feedbackPoints = [];
+  feedbackPolygons = [];
+  currentPolygonLayer = null;
+  updatePolyCount();
+  setAddPolyEnabled(false);
+}
+
+
+/* ================= AOI DRAW ================= */
+
+const drawControl = new L.Control.Draw({
+  draw: {
+    rectangle: { shapeOptions:{ color:"yellow", fillOpacity:0.2 } },
+    polygon:false, polyline:false, circle:false, marker:false, circlemarker:false
+  },
+  edit: { featureGroup: aoiLayer, remove:true }
+});
+
+
+
+
+
+function enableAOISelection(){
+  if (currentRotation !== 0) {
+    alert("Map rotation will be reset for AOI selection.");
+    resetRotation();
+  }
+
+  clearAllDrawControls();
+  show2DView();
+
+  if (!aoiDrawActive) {
+    map2d.addControl(drawControl);
+    aoiDrawActive = true;
+  }
+}
+
+function disableMapboxInteraction(m) {
+  if (!m) return;
+  try {
+    m.boxZoom.disable();
+    m.doubleClickZoom.disable();
+    m.dragPan.disable();
+    m.dragRotate.disable();
+    m.keyboard.disable();
+    m.scrollZoom.disable();
+    m.touchZoomRotate.disable();
+    m.getCanvas().style.cursor = "wait";
+  } catch (e) {
+    console.warn("Failed to disable mapbox interaction:", e);
+  }
+}
+
+function enableMapboxInteraction(m) {
+  if (!m) return;
+  try {
+    m.boxZoom.enable();
+    m.doubleClickZoom.enable();
+    m.dragPan.enable();
+    m.dragRotate.enable();
+    m.keyboard.enable();
+    m.scrollZoom.enable();
+    m.touchZoomRotate.enable();
+    m.getCanvas().style.cursor = "";
+  } catch (e) {
+    console.warn("Failed to enable mapbox interaction:", e);
+  }
+}
+
+map2d.on(L.Draw.Event.CREATED, e => {
+
+  // ===== YOLO MODE =====
+  if (yoloMode) {
+  if (e.layerType !== "rectangle") return;
+
+  feedbackLayer.clearLayers();
+  yoloRectLayer = e.layer;  // rename later if you want
+  feedbackLayer.addLayer(yoloRectLayer);
+  return;
+}
+
+  // ===== AOI MODE =====
+  if (e.layerType === "rectangle") {
+    aoiLayer.clearLayers();
+    aoiRect = e.layer;
+    setLastAOIFromRect();
+    aoiLayer.addLayer(aoiRect);
+
+    aoiDrawActive = false;
+    map2d.removeControl(drawControl);
+
+    const area = L.GeometryUtil.geodesicArea(
+      aoiRect.getLatLngs()[0]
+    );
+
+    document.getElementById("aoiInfo").innerHTML =
+      `AOI Area: ${area.toFixed(0)} m²`;
+  }
+});
+
+
+/* ================= MAP 3D ================= */
+
+
+
+const map3d = new mapboxgl.Map({
+  container: "map3d",
+  style: {
+    version: 8,
+    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+    sources: {},
+    layers: []
+  },
+  center: CENTER,
+  zoom: 19,
+  pitch: 65,
+  bearing: -20,
+  antialias: true
+});
+
+
+
+/* ============= BUILDING HOVER ================== */
+
+const hoverPopup = new mapboxgl.Popup({
+  closeButton: false,
+  closeOnClick: false,
+  offset: 10
+});
+
+
+/* ================= VIEW ================= */
+
+
+
+function show2DView(){
+  document.getElementById("map3d").style.display="none";
+  document.getElementById("map2d-wrapper").style.display="block";
+  setTimeout(()=>map2d.invalidateSize(),200);
+}
+
+function show3DView(){
+  document.getElementById("map2d-wrapper").style.display="none";
+  document.getElementById("map3d").style.display="block";
+
+  // Mapbox needs a resize AFTER it's visible
+  setTimeout(() => {
+    map3d.resize();
+    if (lastAOIBounds) flyToAOI(lastAOIBounds);
+  }, 50);
+}
+
+
+function toggle3DView(){
+  if(!modelLoaded) return;
+
+  const c = map3d.getCenter();
+  const z = map3d.getZoom();
+
+  const toTop = (viewMode === "3d");
+  map3d.easeTo({
+    center: c,
+    zoom: z,
+    pitch: toTop ? 0 : 65,
+    bearing: toTop ? 0 : -20,
+    duration: 500
+  });
+
+  viewMode = toTop ? "top" : "3d";
+
+  // Keep AOI framed
+  setTimeout(() => {
+    if (lastAOIBounds) flyToAOI(lastAOIBounds);
+  }, 550);
+}
+
+
+/* ================= RUN ML ================= */
+
+async function runAOIML(){
+  if(!aoiRect){
+    alert("❌ Draw AOI first");
+    return;
+  }
+
+  if (_modelRunning) return; // prevent double clicks
+
+  try {
+    showLoading("Submitting AOI and running model…");
+
+    const b = aoiRect.getBounds();
+
+    const res = await fetch("/run_aoi_ml",{
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body:JSON.stringify({
+        bounds:[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()]
+      })
+    });
+
+    const data = await res.json();
+
+    if(!data.geojson){
+      hideLoading();
+      alert("⚠ No buildings detected in this AOI.\nTry a larger area or improve YOLO.");
+      show2DView();
+      return;
+    }
+
+    // store AOI
+    setLastAOIFromRect();
+
+    // show 3D first
+    show3DView();
+
+    // update loader text while loading geojson
+    showLoading("Loading 3D buildings…");
+
+    // load buildings into mapbox
+    loadBuildings(data.geojson);
+
+    // tiles debug
+    if (data.tiles && data.tiles.length > 0) drawTiles(data.tiles);
+    else tileDebugLayer.clearLayers();
+
+    // ✅ Wait until mapbox finishes rendering the new source/layers
+    map3d.once("idle", () => {
+      if (lastAOIBounds) flyToAOI(lastAOIBounds);
+      hideLoading(); // ✅ enable interactions only when fully rendered
+    });
+
+  } catch (err) {
+    console.error(err);
+    hideLoading();
+    alert("❌ Error running model. Check console/logs.");
+  }
+}
+
+
+/* ================= BUILDINGS ================= */
+
+map3d.on("load", () => {
+
+  map3d.addSource("custom-tiles", {
+    type: "raster",
+    tiles: [
+      "/tiles/{z}/{x}/{y}.png"
+    ],
+    tileSize: 256,
+    maxzoom: 20
+  });
+
+  map3d.addLayer({
+    id: "custom-tiles-layer",
+    type: "raster",
+    source: "custom-tiles",
+    paint: {
+      "raster-opacity": 1.0
+    }
+  });
+
+});
+
+
+function loadBuildings(path){
+  if(map3d.getLayer("buildings")) map3d.removeLayer("buildings");
+  if(map3d.getSource("buildings")) map3d.removeSource("buildings");
+
+  //map3d.addSource("buildings",{ type:"geojson", data:"/ml/"+path });
+  map3d.addSource("buildings", {
+  type: "geojson",
+  data: "/ml/" + path,
+  generateId: true   // 🔑 REQUIRED
+});
+
+
+
+
+// 1️⃣ ADD BUILDINGS FIRST
+map3d.addLayer({
+  id:"buildings",
+  type:"fill-extrusion",
+  source:"buildings",
+  paint:{
+    "fill-extrusion-color": [
+      "interpolate",
+      ["linear"],
+      ["get", "confidence"],
+      0.4, "#FF3333",
+      0.7, "#FFA500",
+      0.9, "#00FF99"
+    ],
+    "fill-extrusion-height":["get","height"],
+    "fill-extrusion-opacity":0.85
+  }
+});
+
+// 2️⃣ INSERT SHADOWS *BEFORE* BUILDINGS
+map3d.addLayer(
+  {
+    id: "building-shadows",
+    type: "fill",
+    source: "buildings",
+    paint: {
+      "fill-color": "#FF0000",
+      "fill-opacity": 0.35
+    },
+    filter: ["==", ["get", "feature_type"], "shadow"]
+  },
+  "buildings"
+);
+
+
+map3d.on("click", "buildings", e => {
+  if (!feedbackMode) return;
+
+  const type = document.querySelector(
+    'input[name="fbType"]:checked'
+  ).value;
+
+  // ❌ Missing building must never use 3D click
+  if(type === "missing_building"){
+    alert("Missing building → draw polygon in 2D");
+    return;
+  }
+
+  const feature = e.features[0];
+  selectedOriginalGeometry = feature.geometry;
+  highlightedFeatureId = feature.id;
+
+
+  // Reset highlight
+  map3d.setPaintProperty("buildings", "fill-extrusion-color", "#00FFFF");
+
+  map3d.setFeatureState(
+    { source: "buildings", id: highlightedFeatureId },
+    { selected: true }
+  );
+
+  // 🔴 NOT A BUILDING
+  if (type === "not_a_building") {
+    map3d.setPaintProperty("buildings", "fill-extrusion-color", [
+      "case",
+      ["boolean", ["feature-state", "selected"], false],
+      "#FF3333",
+      "#00FFFF"
+    ]);
+
+    new mapboxgl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML("<b>Marked:</b> 🚫 Not a Building")
+      .addTo(map3d);
+
+    alert("Marked as NOT A BUILDING.\nClick Submit to confirm.");
+    return;
+  }
+
+  // ❌ WRONG GEOMETRY
+  if (type === "wrong_geometry") {
+    map3d.setPaintProperty("buildings", "fill-extrusion-color", [
+      "case",
+      ["boolean", ["feature-state", "selected"], false],
+      "#FFA500", // 🟠 orange = wrong geometry
+      "#00FFFF"
+    ]);
+
+    new mapboxgl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML("<b>Wrong Geometry</b><br/>Redraw correct footprint in 2D")
+      .addTo(map3d);
+
+    // 🔑 SWITCH TO 2D FOR DRAWING
+    show2DView();
+    alert("Now redraw the correct footprint in 2D.");
+    return;
+  }
+
+  // ⛔ Missing building should NOT use 3D click
+  alert("Missing building: draw polygon in 2D.");
+});
+
+
+
+
+
+  modelLoaded = true;
+}
+
+
+/* ========= on hover building handler ========== */
+
+
+map3d.on("mousemove", "buildings", e => {
+  const f = e.features[0];
+  if (!f) return;
+
+  map3d.getCanvas().style.cursor = "pointer";
+
+  hoverPopup
+    .setLngLat(e.lngLat)
+    .setHTML(`
+      <div style="font-size:12px">
+        <b>${f.properties.id}</b><br/>
+        Height: ${Number(f.properties.height).toFixed(2)} m<br/>
+        Confidence: ${(f.properties.confidence * 100).toFixed(1)}%
+      </div>
+    `)
+    .addTo(map3d);
+});
+
+
+map3d.on("mousemove", "building-shadows", e => {
+  const f = e.features[0];
+  if (!f) return;
+
+  hoverPopup
+    .setLngLat(e.lngLat)
+    .setHTML(`
+      <div style="font-size:12px;color:#ff3333">
+        <b>${f.properties.id}</b><br/>
+        Shadow length: ${Number(f.properties.shadow_len).toFixed(2)} m<br/>
+        Azimuth: ${Number(f.properties.shadow_azimuth).toFixed(1)}°
+      </div>
+    `)
+    .addTo(map3d);
+});
+
+
+
+map3d.on("mouseleave", "buildings", () => {
+  map3d.getCanvas().style.cursor = "";
+  hoverPopup.remove();
+});
+
+map3d.on("mouseleave", "building-shadows", () => {
+   map3d.getCanvas().style.cursor = "";
+  hoverPopup.remove();
+});
+
+
+/* ================= FEEDBACK ================= */
+
+
+
+
+
+
+function enableFeedbackMode(){
+  feedbackMode = true;
+  feedbackPoints = [];
+  feedbackPolygons = [];
+  selectedOriginalGeometry = null;
+  feedbackLayer.clearLayers();
+  updatePolyCount();
+setAddPolyEnabled(false);
+  document.getElementById("feedbackPanel").style.display="block";
+
+  if(highlightedFeatureId !== null){
+  map3d.setFeatureState(
+    { source:"buildings", id: highlightedFeatureId },
+    { selected:false }
+  );
+  highlightedFeatureId = null;
+}
+
+}
+
+
+
+// map2d.on("click", e=>{
+//   if (yoloMode) return;   // 🔑 ADD THIS LINE
+//   if (!feedbackMode) return;
+
+//   const type = document.querySelector('input[name="fbType"]:checked').value;
+
+//   if(type==="wrong_geometry" && !selectedOriginalGeometry){
+//     alert("Click the wrong building in 3D first");
+//     return;
+//   }
+
+//   feedbackPoints.push([e.latlng.lng, e.latlng.lat]);
+//   feedbackLayer.clearLayers();
+
+//   if(feedbackPoints.length>2){
+//     const poly = [...feedbackPoints, feedbackPoints[0]];
+//     L.polygon(poly.map(p=>[p[1],p[0]]),
+//       {color:"red",fillOpacity:0.3}
+//     ).addTo(feedbackLayer);
+//   } else {
+//     L.circleMarker(e.latlng,{radius:5,color:"red"}).addTo(feedbackLayer);
+//   }
+// });
+
+
+map2d.on("click", e=>{
+  if (yoloMode) return;
+  if (!feedbackMode) return;
+
+  const type = document.querySelector('input[name="fbType"]:checked').value;
+
+  if(type==="wrong_geometry" && !selectedOriginalGeometry){
+    alert("Click the wrong building in 3D first");
+    return;
+  }
+
+  feedbackPoints.push([e.latlng.lng, e.latlng.lat]);
+  //feedbackLayer.clearLayers();
+
+   if (feedbackPoints.length < 3) {
+    L.circleMarker(e.latlng, { radius: 5, color: "orange" }).addTo(feedbackLayer);
+    setAddPolyEnabled(false);
+    return;
+  }
+
+  // Once we hit 3 points, auto-close preview polygon & enable button
+  redrawCurrentPolygonPreview();
+  setAddPolyEnabled(true);
+});
+
+// Helper: GeoJSON Polygon -> [minLng, minLat, maxLng, maxLat]
+function geomToBbox(geom) {
+  // geom: GeoJSON Polygon
+  const coords = geom.coordinates[0];
+  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+
+  coords.forEach(([lng, lat]) => {
+    minLng = Math.min(minLng, lng);
+    minLat = Math.min(minLat, lat);
+    maxLng = Math.max(maxLng, lng);
+    maxLat = Math.max(maxLat, lat);
+  });
+
+  return [minLng, minLat, maxLng, maxLat];
+}
+
+// Helper: GeoJSON Polygon or MultiPolygon -> bbox
+function anyGeomToBbox(geom) {
+  // supports Polygon or MultiPolygon
+  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+
+  function consumeRing(ring) {
+    ring.forEach(([lng, lat]) => {
+      minLng = Math.min(minLng, lng);
+      minLat = Math.min(minLat, lat);
+      maxLng = Math.max(maxLng, lng);
+      maxLat = Math.max(maxLat, lat);
+    });
+  }
+
+  if (!geom || !geom.type) return null;
+
+  if (geom.type === "Polygon") {
+    consumeRing(geom.coordinates[0]);
+  } else if (geom.type === "MultiPolygon") {
+    geom.coordinates.forEach(poly => {
+      // poly is array of rings; take exterior ring [0]
+      if (poly && poly[0]) consumeRing(poly[0]);
+    });
+  } else {
+    return null;
+  }
+
+  if (!isFinite(minLng) || !isFinite(minLat) || !isFinite(maxLng) || !isFinite(maxLat)) {
+    return null;
+  }
+  return [minLng, minLat, maxLng, maxLat];
+}
+
+
+async function submitFeedback() {
+  try {
+    const type = document.querySelector('input[name="fbType"]:checked')?.value || "missing_building";
+
+    const closeRing = (ring) => {
+      if (!ring || ring.length < 3) return ring;
+      const a = ring[0];
+      const b = ring[ring.length - 1];
+      if (a[0] !== b[0] || a[1] !== b[1]) ring.push([a[0], a[1]]);
+      return ring;
+    };
+
+    const bboxFromRing = (ring) => {
+      if (!ring || ring.length < 3) return null;
+      let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+      for (const [lng, lat] of ring) {
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+        minLng = Math.min(minLng, lng);
+        minLat = Math.min(minLat, lat);
+        maxLng = Math.max(maxLng, lng);
+        maxLat = Math.max(maxLat, lat);
+      }
+      if (!(maxLng > minLng && maxLat > minLat)) return null;
+      return [minLng, minLat, maxLng, maxLat];
+    };
+
+    const padBbox = (bbox, padFrac = 0.25) => {
+      const [w, s, e, n] = bbox;
+      const dx = (e - w) * padFrac;
+      const dy = (n - s) * padFrac;
+      return [w - dx, s - dy, e + dx, n + dy];
+    };
+
+    const viewportBounds4326 = () => {
+      const b = map2d.getBounds(); // ✅ FIX: map2d (not map)
+      return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+    };
+
+    const aoiFromRectOrViewport = () => {
+      if (aoiRect) {
+        const ab = aoiRect.getBounds();
+        return [ab.getWest(), ab.getSouth(), ab.getEast(), ab.getNorth()];
+      }
+      return viewportBounds4326();
+    };
+
+    const payload = { type };
+
+    // -----------------------------
+    // NOT A BUILDING
+    // -----------------------------
+    if (type === "not_a_building") {
+      if (!selectedOriginalGeometry) {
+        alert("Click the building in 3D first (original geometry required).");
+        return;
+      }
+      if (!aoiRect) {
+        alert("Draw AOI first (required for not_a_building).");
+        return;
+      }
+
+      payload.original_geometry = selectedOriginalGeometry;
+      payload.aoi_bounds = aoiFromRectOrViewport();
+
+      const ob = anyGeomToBbox?.(selectedOriginalGeometry);
+      if (ob) payload.original_bbox = ob;
+    }
+
+    // -----------------------------
+    // WRONG GEOMETRY (multi polygon)
+    // -----------------------------
+    else if (type === "wrong_geometry") {
+      if (!selectedOriginalGeometry) {
+        alert("Click the wrong building in 3D first.");
+        return;
+      }
+      if (!aoiRect) {
+        alert("Draw AOI and run model first (required for wrong_geometry).");
+        return;
+      }
+
+      // ✅ AUTO-FINALIZE CURRENT POLYGON if user didn’t press “Add another polygon”
+      const cur = getCurrentDrawnPolygonIfReady?.();
+      if (cur) {
+        feedbackPolygons.push(cur);
+        updatePolyCount?.();
+
+        // lock it visually (optional)
+        try {
+          L.polygon(
+            cur.coordinates[0].map(p => [p[1], p[0]]),
+            { color: "orange", fillOpacity: 0.35, weight: 2 }
+          ).addTo(feedbackLayer);
+        } catch (e) {}
+
+        // reset current draft points
+        feedbackPoints = [];
+        if (currentPolygonLayer) {
+          try { feedbackLayer.removeLayer(currentPolygonLayer); } catch(e){}
+          currentPolygonLayer = null;
+        }
+        setAddPolyEnabled?.(false);
+      }
+
+      if (!Array.isArray(feedbackPolygons) || feedbackPolygons.length === 0) {
+        alert("Draw at least 1 corrected polygon (>= 3 points).");
+        return;
+      }
+
+      payload.original_geometry = selectedOriginalGeometry;
+      payload.correct_geometries = feedbackPolygons;
+      payload.aoi_bounds = aoiFromRectOrViewport();
+
+      const ob = anyGeomToBbox?.(selectedOriginalGeometry);
+      if (ob) payload.original_bbox = ob;
+    }
+
+    // -----------------------------
+    // MISSING BUILDING (NO AOI REQUIRED)
+    // -----------------------------
+    else if (type === "missing_building") {
+      if (!Array.isArray(feedbackPoints) || feedbackPoints.length < 3) {
+        alert("Select at least 3 points.");
+        return;
+      }
+
+      const ring = feedbackPoints.map(p => {
+        if (Array.isArray(p) && p.length === 2) return [p[0], p[1]]; // [lng,lat]
+        if (p && typeof p === "object" && "lng" in p && "lat" in p) return [p.lng, p.lat];
+        return [NaN, NaN];
+      });
+
+      closeRing(ring);
+
+      const polyBbox = bboxFromRing(ring);
+      if (!polyBbox) {
+        alert("Invalid polygon. Redraw the building outline.");
+        return;
+      }
+
+      payload.geometry = { type: "Polygon", coordinates: [ring] };
+      payload.bbox = polyBbox;
+
+      // no AOI required → use padded polygon bbox if AOI not set
+      payload.aoi_bounds = aoiRect ? aoiFromRectOrViewport() : padBbox(polyBbox, 0.35);
+    }
+
+    else {
+      alert("Unhandled feedback type: " + type);
+      return;
+    }
+
+    // validate aoi_bounds
+    if (payload.aoi_bounds) {
+      const [w, s, e, n] = payload.aoi_bounds;
+      if (!(e > w && n > s)) {
+        console.warn("Invalid aoi_bounds:", payload.aoi_bounds);
+        alert("Invalid aoi_bounds computed. Zoom in a bit and retry.");
+        return;
+      }
+    }
+
+    console.log("[submitFeedback] payload:", payload);
+
+    const res = await fetch("/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const text = await res.text();
+    console.log("[submitFeedback] status:", res.status);
+    console.log("[submitFeedback] body:", text);
+
+    if (!res.ok) {
+      alert("❌ Feedback failed:\n" + text);
+      return;
+    }
+
+    alert("✅ Feedback saved");
+
+    if (type === "wrong_geometry") {
+      resetPolygonState?.();
+      if (highlightedFeatureId !== null) {
+        map3d.setFeatureState?.({ source: "buildings", id: highlightedFeatureId }, { selected: false });
+        highlightedFeatureId = null;
+      }
+      selectedOriginalGeometry = null;
+      show3DView?.();
+      return;
+    }
+
+    cancelFeedback?.();
+
+  } catch (err) {
+    console.error("submitFeedback error:", err);
+    alert("❌ submitFeedback crashed. Check console.");
+  }
+}
+
+
+
+// async function submitFeedback() {
+//   try {
+//     const type = document.querySelector('input[name="fbType"]:checked')?.value || "missing_building";
+
+//     // Helpers
+//     const closeRing = (ring) => {
+//       if (!ring || ring.length < 3) return ring;
+//       const a = ring[0];
+//       const b = ring[ring.length - 1];
+//       if (a[0] !== b[0] || a[1] !== b[1]) ring.push([a[0], a[1]]);
+//       return ring;
+//     };
+
+//     const bboxFromRing = (ring) => {
+//       if (!ring || ring.length < 3) return null;
+//       let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+//       for (const p of ring) {
+//         const lng = p[0], lat = p[1];
+//         if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+//         minLng = Math.min(minLng, lng);
+//         minLat = Math.min(minLat, lat);
+//         maxLng = Math.max(maxLng, lng);
+//         maxLat = Math.max(maxLat, lat);
+//       }
+//       if (!(maxLng > minLng && maxLat > minLat)) return null;
+//       return [minLng, minLat, maxLng, maxLat];
+//     };
+
+//     const padBbox = (bbox, padFrac = 0.25) => {
+//       // bbox: [w,s,e,n]
+//       const [w, s, e, n] = bbox;
+//       const dx = (e - w) * padFrac;
+//       const dy = (n - s) * padFrac;
+//       return [w - dx, s - dy, e + dx, n + dy];
+//     };
+
+//     const viewportBounds4326 = () => {
+//       // Leaflet map bounds are lat/lng in EPSG:4326
+//       const b = map.getBounds();
+//       return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+//     };
+
+//     const aoiFromRectOrViewport = () => {
+//       if (typeof aoiRect !== "undefined" && aoiRect) {
+//         const ab = aoiRect.getBounds();
+//         return [ab.getWest(), ab.getSouth(), ab.getEast(), ab.getNorth()];
+//       }
+//       return viewportBounds4326();
+//     };
+
+//     const payload = { type };
+
+//     // -----------------------------
+//     // NOT A BUILDING
+//     // -----------------------------
+//     if (type === "not_a_building") {
+//       if (!selectedOriginalGeometry) {
+//         alert("Click the building in 3D first (original geometry required).");
+//         return;
+//       }
+//       if (!(typeof aoiRect !== "undefined" && aoiRect)) {
+//         alert("Draw AOI first (required for not_a_building).");
+//         return;
+//       }
+//       payload.original_geometry = selectedOriginalGeometry;
+//       payload.aoi_bounds = aoiFromRectOrViewport();
+
+//       const ob = anyGeomToBbox?.(selectedOriginalGeometry);
+//       if (ob) payload.original_bbox = ob;
+//     }
+
+//     // -----------------------------
+//     // WRONG GEOMETRY
+//     // -----------------------------
+//     else if (type === "wrong_geometry") {
+//       if (!selectedOriginalGeometry) {
+//         alert("Click the wrong building in 3D first.");
+//         return;
+//       }
+//       if (!(typeof aoiRect !== "undefined" && aoiRect)) {
+//         alert("Draw AOI and run model first (required for wrong_geometry).");
+//         return;
+//       }
+//       if (!Array.isArray(feedbackPolygons) || feedbackPolygons.length === 0) {
+//         alert("Draw at least 1 corrected polygon.");
+//         return;
+//       }
+
+//       payload.original_geometry = selectedOriginalGeometry;
+//       payload.correct_geometries = feedbackPolygons;
+//       payload.aoi_bounds = aoiFromRectOrViewport();
+
+//       const ob = anyGeomToBbox?.(selectedOriginalGeometry);
+//       if (ob) payload.original_bbox = ob;
+
+//       const cb = geomToBbox?.(feedbackPolygons[0]);
+//       if (cb) payload.bbox = cb;
+//     }
+
+//     // -----------------------------
+//     // MISSING BUILDING (NO AOI REQUIRED)
+//     // -----------------------------
+//     else if (type === "missing_building") {
+//       if (!Array.isArray(feedbackPoints) || feedbackPoints.length < 3) {
+//         alert("Select at least 3 points.");
+//         return;
+//       }
+
+//       // Leaflet click points are usually {lat,lng}. GeoJSON wants [lng,lat]
+//       const ring = feedbackPoints.map(p => {
+//         if (Array.isArray(p) && p.length === 2) return [p[0], p[1]];     // assume already [lng,lat]
+//         if (p && typeof p === "object" && "lng" in p && "lat" in p) return [p.lng, p.lat];
+//         return [NaN, NaN];
+//       });
+
+//       closeRing(ring);
+
+//       const polyBbox = bboxFromRing(ring);
+//       if (!polyBbox) {
+//         alert("Invalid polygon. Redraw the building outline.");
+//         return;
+//       }
+
+//       payload.geometry = { type: "Polygon", coordinates: [ring] };
+//       payload.bbox = polyBbox;
+
+//       // Key point:
+//       // We still send aoi_bounds even without AOI rectangle.
+//       // Use AOI rect if present; else use viewport bounds.
+//       // And to avoid too-huge crops, shrink to polygon bbox + padding (recommended).
+//       const baseBounds = (typeof aoiRect !== "undefined" && aoiRect) ? aoiFromRectOrViewport() : padBbox(polyBbox, 0.35);
+//       payload.aoi_bounds = baseBounds;
+//     }
+
+//     else {
+//       alert("Unhandled feedback type: " + type);
+//       return;
+//     }
+
+//     // Validate aoi_bounds ordering if present
+//     if (payload.aoi_bounds) {
+//       const [w, s, e, n] = payload.aoi_bounds;
+//       if (!(e > w && n > s)) {
+//         console.warn("Invalid aoi_bounds:", payload.aoi_bounds);
+//         alert("Invalid aoi_bounds computed. Zoom in a bit and retry.");
+//         return;
+//       }
+//     }
+
+//     console.log("[submitFeedback] payload:", payload);
+
+//     const res = await fetch("/feedback", {
+//       method: "POST",
+//       headers: { "Content-Type": "application/json" },
+//       body: JSON.stringify(payload),
+//     });
+
+//     const text = await res.text();
+//     console.log("[submitFeedback] status:", res.status);
+//     console.log("[submitFeedback] body:", text);
+
+//     if (!res.ok) {
+//       alert("❌ Feedback failed:\n" + text);
+//       return;
+//     }
+
+//     alert("✅ Feedback saved");
+
+//     // Keep wrong-geometry loop behavior if you have it
+//     if (type === "wrong_geometry") {
+//       resetPolygonState?.();
+//       if (typeof highlightedFeatureId !== "undefined" && highlightedFeatureId !== null) {
+//         map3d.setFeatureState?.({ source: "buildings", id: highlightedFeatureId }, { selected: false });
+//         highlightedFeatureId = null;
+//       }
+//       selectedOriginalGeometry = null;
+//       show3DView?.();
+//       return;
+//     }
+
+//     cancelFeedback?.();
+
+//   } catch (err) {
+//     console.error("submitFeedback error:", err);
+//     alert("❌ submitFeedback crashed. Check console.");
+//   }
+// }
+
+
+function cancelFeedback(){
+  feedbackMode = false;
+  feedbackPoints = [];
+  selectedOriginalGeometry = null;
+
+  feedbackPolygons = [];
+currentPolygonLayer = null;
+updatePolyCount();
+setAddPolyEnabled(false);
+
+  if(highlightedFeatureId !== null){
+    map3d.setFeatureState(
+      { source: "buildings", id: highlightedFeatureId },
+      { selected: false }
+    );
+    highlightedFeatureId = null;
+  }
+
+  feedbackLayer.clearLayers();
+  document.getElementById("feedbackPanel").style.display = "none";
+}
+
+
+
+ /// yolo feedback
+
+function enableYOLOFeedback() {
+  if (currentRotation !== 0) {
+    alert("Map rotation will be reset for YOLO annotation.");
+    resetRotation();
+  }
+
+  if (!aoiRect) {
+    alert("Draw AOI first");
+    return;
+  }
+
+  yoloMode = true;
+  yoloRectLayer = null;
+  feedbackLayer.clearLayers();
+
+  clearAllDrawControls();
+  show2DView();
+
+  const yoloRectDrawer = new L.Draw.Rectangle(map2d, {
+    shapeOptions: { color: "blue", fillOpacity: 0.25, weight: 2 }
+  });
+  yoloRectDrawer.enable();
+
+  document.getElementById("yoloPanel").style.display = "block";
+  document.getElementById("feedbackPanel").style.display = "none";
+
+  setTimeout(() => {
+    alert("Draw a bounding box (rectangle). Release mouse to finish.");
+  }, 100);
+}
+
+
+
+
+async function submitYOLOFeedback() {
+  if (!yoloRectLayer) {
+    alert("Draw a rectangle first");
+    return;
+  }
+
+  const type = document.querySelector('input[name="yoloType"]:checked').value;
+
+  const b = yoloRectLayer.getBounds();
+  const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]; // [minLng,minLat,maxLng,maxLat]
+
+  // Optional: ensure inside AOI
+  if (aoiRect && !aoiRect.getBounds().contains(b)) {
+    alert("YOLO box must be fully inside AOI");
+    return;
+  }
+
+  const payload = {
+    type,
+    bbox,
+    aoi_bounds: [
+      aoiRect.getBounds().getWest(),
+      aoiRect.getBounds().getSouth(),
+      aoiRect.getBounds().getEast(),
+      aoiRect.getBounds().getNorth()
+    ]
+  };
+
+  await fetch("/feedback_yolo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  alert("✅ YOLO feedback saved");
+  cancelYOLOFeedback();
+}
+
+
+
+
+function cancelYOLOFeedback() {
+  yoloMode = false;
+  yoloRectLayer = null;
+  
+  feedbackLayer.clearLayers();
+  document.getElementById("yoloPanel").style.display = "none";
+
+  clearAllDrawControls();
+  show2DView();
+}
+
+
+
+
+/* ================= RESET ================= */
+
+function clearAll(){
+  aoiLayer.clearLayers();
+  feedbackLayer.clearLayers();
+  aoiRect=null;
+  modelLoaded=false;
+  feedbackMode=false;
+  aoiDrawActive=false;
+  document.getElementById("aoiInfo").innerHTML="AOI: not selected";
+}
+
+// Show/hide "Add polygon" UI based on selected feedback type
+document.querySelectorAll('input[name="fbType"]').forEach(r => {
+  r.addEventListener("change", () => {
+    const t = document.querySelector('input[name="fbType"]:checked').value;
+    const btn = document.getElementById("addPolyBtn");
+    const cnt = document.getElementById("polyCount");
+    const show = (t === "wrong_geometry");
+    if (btn) btn.style.display = show ? "block" : "none";
+    if (cnt) cnt.style.display = show ? "block" : "none";
+
+    // optional: also disable button when switching types
+    if (!show && btn) btn.disabled = true;
+  });
+});
+
+// Run once on page load to set correct initial visibility
+(() => {
+  const t = document.querySelector('input[name="fbType"]:checked')?.value;
+  const btn = document.getElementById("addPolyBtn");
+  const cnt = document.getElementById("polyCount");
+  const show = (t === "wrong_geometry");
+  if (btn) btn.style.display = show ? "block" : "none";
+  if (cnt) cnt.style.display = show ? "block" : "none";
+})();
+
+
+</script>
+
+</body>
+</html>

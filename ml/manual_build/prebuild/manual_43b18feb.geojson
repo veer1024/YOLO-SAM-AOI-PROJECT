@@ -1,0 +1,266 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              89.548227,
+              28.880112
+            ],
+            [
+              89.548311,
+              28.880132
+            ],
+            [
+              89.548299,
+              28.880155
+            ],
+            [
+              89.548178,
+              28.88013
+            ],
+            [
+              89.548202,
+              28.880072
+            ],
+            [
+              89.548244,
+              28.880088
+            ],
+            [
+              89.548227,
+              28.880112
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": "bldg_1",
+        "kind": "building",
+        "source": "prebuild",
+        "height": 8.25,
+        "sun_azimuth": 150.00983749016302,
+        "sun_elevation": 48.32476498087298,
+        "confidence": 0.41
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              89.548285,
+              28.880157
+            ],
+            [
+              89.548254,
+              28.880202
+            ],
+            [
+              89.548139,
+              28.880177
+            ],
+            [
+              89.54817,
+              28.880129
+            ],
+            [
+              89.548285,
+              28.880157
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": "bldg_1_shadow",
+        "kind": "shadow",
+        "source": "prebuild",
+        "parent_building": "bldg_1",
+        "shadow_length_m": 7.35,
+        "sun_azimuth": 150.00983749016302,
+        "sun_elevation": 48.32476498087298,
+        "confidence": 0.95
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              89.548422,
+              28.880155
+            ],
+            [
+              89.548497,
+              28.880172
+            ],
+            [
+              89.54849,
+              28.880193
+            ],
+            [
+              89.548368,
+              28.880168
+            ],
+            [
+              89.548391,
+              28.880122
+            ],
+            [
+              89.548427,
+              28.88013
+            ],
+            [
+              89.548422,
+              28.880155
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": "bldg_2",
+        "kind": "building",
+        "source": "prebuild",
+        "height": 8.93,
+        "sun_azimuth": 150.00983749016302,
+        "sun_elevation": 48.32476498087298,
+        "confidence": 0.45
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              89.548486,
+              28.880193
+            ],
+            [
+              89.548451,
+              28.880247
+            ],
+            [
+              89.548328,
+              28.88022
+            ],
+            [
+              89.548368,
+              28.880166
+            ],
+            [
+              89.548486,
+              28.880193
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": "bldg_2_shadow",
+        "kind": "shadow",
+        "source": "prebuild",
+        "parent_building": "bldg_2",
+        "shadow_length_m": 7.95,
+        "sun_azimuth": 150.00983749016302,
+        "sun_elevation": 48.32476498087298,
+        "confidence": 0.95
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              89.548615,
+              28.880197
+            ],
+            [
+              89.548701,
+              28.880211
+            ],
+            [
+              89.548683,
+              28.880238
+            ],
+            [
+              89.548564,
+              28.88021
+            ],
+            [
+              89.548587,
+              28.880153
+            ],
+            [
+              89.548624,
+              28.880163
+            ],
+            [
+              89.548615,
+              28.880197
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": "bldg_3",
+        "kind": "building",
+        "source": "prebuild",
+        "height": 9.56,
+        "sun_azimuth": 150.00983749016302,
+        "sun_elevation": 48.32476498087298,
+        "confidence": 0.48
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              89.548681,
+              28.880244
+            ],
+            [
+              89.548647,
+              28.88029
+            ],
+            [
+              89.548516,
+              28.880263
+            ],
+            [
+              89.548561,
+              28.880209
+            ],
+            [
+              89.548681,
+              28.880244
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": "bldg_3_shadow",
+        "kind": "shadow",
+        "source": "prebuild",
+        "parent_building": "bldg_3",
+        "shadow_length_m": 8.51,
+        "sun_azimuth": 150.00983749016302,
+        "sun_elevation": 48.32476498087298,
+        "confidence": 0.95
+      }
+    }
+  ]
+}

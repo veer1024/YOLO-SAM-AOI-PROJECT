@@ -7,13 +7,14 @@
 
 
 <!-- Leaflet -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css"/>
 
 <!-- Leaflet Draw -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+<link rel="stylesheet" href="/static/vendor/leaflet-draw/leaflet.draw.css"/>
 
-<!-- Mapbox -->
-<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet"/>
+<!-- MapLibre GL -->
+<link rel="stylesheet" href="/static/vendor/maplibre-gl/maplibre-gl.css"/>
+
 
 <style>
 
@@ -202,13 +203,71 @@ html, body { margin:0; height:100%; }
 .pinfo-wrap { position: relative; }
 
 
+.import-box{
+  border:2px dashed #cbd5e1;
+  border-radius:10px;
+  padding:12px;
+  background:#f8fafc;
+}
+.import-hint{ font-size:13px; color:#334155; text-align:center; }
+.import-status{ margin:10px 0 6px; font-size:12px; }
+.import-status .ok{ color:#16a34a; }
+.import-status .bad{ color:#dc2626; }
+#importLoadBtn:disabled{ opacity:0.5; cursor:not-allowed; }
+
+
+#walkHud {
+  position: fixed;
+  inset: 0;
+  display: none;
+  z-index: 100002;
+  pointer-events: none;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+#walkHud .crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  transform: translate(-50%, -50%);
+  opacity: 0.85;
+}
+#walkHud .crosshair:before,
+#walkHud .crosshair:after{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:50%;
+  background: rgba(255,255,255,0.9);
+  transform: translate(-50%,-50%);
+}
+#walkHud .crosshair:before { width: 2px; height: 14px; }
+#walkHud .crosshair:after  { width: 14px; height: 2px; }
+
+#walkHud .hint {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  background: rgba(17,17,17,0.72);
+  color: #fff;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.25;
+  max-width: 360px;
+}
+#walkHud .hint b { font-weight: 700; }
+
+
 </style>
 </head>
 
 <body>
 
 
-  
+
 
   <div id="toast"></div>
 <div id="loadingOverlay" aria-live="polite" aria-busy="true">
@@ -227,6 +286,7 @@ html, body { margin:0; height:100%; }
   <button id="runBtn" onclick="runAOIML()">🚀 Run ML</button>
   <button onclick="toggleTiles()">🟪 Toggle Tiles</button>
   <button id="p2pBtn" onclick="toggleP2PDistance()">📏 P2P Distance</button>
+  <button onclick="toggle3DStyle()">🗺 View: Satellite / Shadowmap</button>
 
   <div id="aoiInfo">AOI: not selected</div>
 
@@ -254,6 +314,8 @@ html, body { margin:0; height:100%; }
 <!-- RIGHT PANEL -->
 <div class="panel-right">
   <button onclick="toggle3DView()">🧭 Toggle 3D / Top</button>
+  <button id="walkBtn" onclick="toggleWalkMode()">🚶 Walk Mode</button>
+  <button onclick="toggleImportPanel()">📥 Import (GeoJSON / GLB)</button>
   <button onclick="enableFeedbackMode()">🧠 Improve Model</button>
   <button onclick="enableYOLOFeedback()">📦 Improve Detector (YOLO)</button>
   <button onclick="clearAll()">♻ Clear</button>
@@ -274,6 +336,82 @@ html, body { margin:0; height:100%; }
   <hr/>
 
   <button id="dlTiffBtn">🗺 Export GeoTIFF (AOI)</button>
+</div>
+
+
+<!-- IMPORT PANEL -->
+<div id="importPanel" class="panel-right" style="top:520px; display:none;">
+  <b>Import</b><br/><br/>
+
+  <div id="dropZone" class="import-box">
+    <div class="import-hint">
+      Drag & drop <b>.geojson</b> + <b>.glb</b><br/>
+      <small>Exactly one of each (max 2 files)</small>
+    </div>
+
+    <input id="importFileInput" type="file" multiple
+      accept=".geojson,.glb,application/geo+json,model/gltf-binary"
+      style="width:100%;"
+    />
+
+    <div class="import-status">
+      <div id="geojsonStatus" class="bad">❌ GeoJSON not loaded</div>
+      <div id="glbStatus" class="bad">❌ GLB not loaded</div>
+    </div>
+
+    <button id="importLoadBtn" onclick="runImportUpload()" disabled>⬆ Upload & Load</button>
+    <button onclick="clearImported()">🧹 Clear Imported</button>
+  </div>
+</div>
+
+
+<!-- GLB VIEWER (overlay) -->
+<div id="glbViewerWrap" style="
+  position: fixed;
+  inset: 0;
+  display: none;
+  z-index: 100001;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(2px);
+">
+  <div style="
+    position:absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%,-50%);
+    width: min(980px, 92vw);
+    height: min(680px, 86vh);
+    background: #111;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 18px 60px rgba(0,0,0,0.45);
+  ">
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; color:#fff; font-family:system-ui;">
+      <b>GLB Viewer</b>
+      <button onclick="closeGlbViewer()" style="cursor:pointer; border:none; background:#333; color:#fff; padding:6px 10px; border-radius:10px;">✕ Close</button>
+    </div>
+    <div style="height: calc(100% - 44px); background:#000;">
+      <!-- <model-viewer id="glbViewer"
+        style="width:100%; height:100%;"
+        src=""
+        camera-controls
+        auto-rotate
+        exposure="1.0"
+        shadow-intensity="0.7"
+        ar
+      ></model-viewer> -->
+      <model-viewer id="glbViewer"
+        style="width:100%; height:100%;"
+        src=""
+        camera-controls
+        auto-rotate
+        exposure="1.4"
+        shadow-intensity="1.0"
+        environment-image="neutral"
+        tone-mapping="aces"
+      ></model-viewer>
+    </div>
+  </div>
 </div>
 
 
@@ -348,14 +486,32 @@ html, body { margin:0; height:100%; }
 
 <div id="map3d"></div>
 
+
+<div id="walkHud">
+  <div class="crosshair"></div>
+  <div class="hint">
+    <b>Walk Mode</b><br/>
+    WASD move · Mouse look · Shift sprint · Space up · C down · Esc exit
+  </div>
+</div>
+
+
 <!-- LIBS -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 
-<!-- Geometry Util (CRITICAL) -->
-<script src="https://unpkg.com/leaflet-geometryutil@0.10.1/src/leaflet.geometryutil.js"></script>
 
+<!-- Leaflet -->
+<script src="/static/vendor/leaflet/leaflet.js"></script>
+
+<!-- Leaflet Draw -->
+<script src="/static/vendor/leaflet-draw/leaflet.draw.js"></script>
+
+<!-- MapLibre GL -->
+<script src="/static/vendor/maplibre-gl/maplibre-gl.js"></script>
+
+<!-- Geometry Util -->
+<script src="/static/vendor/leaflet-geometryutil/leaflet.geometryutil.js"></script>
+
+<script type="module" src="/static/vendor/model-viewer/model-viewer.min.js"></script>
 
 
 <script>
@@ -490,6 +646,259 @@ async function downloadAOIGeoTiff() {
 }
 
 
+function toggleImportPanel() {
+  const panel = document.getElementById("importPanel");
+  if (!panel) return;
+
+  const isOpen = panel.style.display !== "none";
+
+  // close it
+  if (isOpen) {
+    panel.style.display = "none";
+    return;
+  }
+
+  // open it
+  panel.style.display = "block";
+
+  // optional: close other panels so UI doesn’t overlap
+  try { document.getElementById("feedbackPanel").style.display = "none"; } catch(e){}
+  try { document.getElementById("yoloPanel").style.display = "none"; } catch(e){}
+
+  // ensure status text/button state is correct when opening
+  try { updateImportUI(); } catch(e){}
+}
+
+
+/* import glb, geojson */
+
+/* import glb, geojson */
+
+// -----------------------
+// IMPORT STATE (strict)
+// -----------------------
+let _importFiles = []; // File[]
+let _importGeoFile = null; // File
+let _importGlbFile = null; // File
+let _importedGeojsonPath = null;
+let _importedGlbPath = null;
+
+function updateImportUI() {
+  const geoEl = document.getElementById("geojsonStatus");
+  const glbEl = document.getElementById("glbStatus");
+  const loadBtn = document.getElementById("importLoadBtn");
+
+  if (geoEl) {
+    geoEl.textContent = _importGeoFile ? `✔ ${_importGeoFile.name}` : "❌ GeoJSON not loaded";
+    geoEl.className = _importGeoFile ? "ok" : "bad";
+  }
+  if (glbEl) {
+    glbEl.textContent = _importGlbFile ? `✔ ${_importGlbFile.name}` : "❌ GLB not loaded";
+    glbEl.className = _importGlbFile ? "ok" : "bad";
+  }
+
+  if (loadBtn) loadBtn.disabled = !(_importGeoFile && _importGlbFile);
+}
+
+function clearImported() {
+  _importFiles = [];
+  _importGeoFile = null;
+  _importGlbFile = null;
+  _importedGeojsonPath = null;
+  _importedGlbPath = null;
+
+  const inp = document.getElementById("importFileInput");
+  if (inp) inp.value = "";
+
+  updateImportUI();
+  showToast(`<b>🧹 Cleared import selection</b>`, 1500);
+}
+
+function validateAndSetImportFiles(files) {
+  const picked = Array.from(files || []);
+  if (picked.length === 0) return;
+
+  for (const f of picked) {
+    const n = (f.name || "").toLowerCase();
+
+    if (n.endsWith(".geojson")) {
+      _importGeoFile = f;
+    } else if (n.endsWith(".glb")) {
+      _importGlbFile = f;
+    } else {
+      showToast(
+        `<b>❌ Unsupported file</b><div class="small">${f.name}</div>`,
+        2500
+      );
+    }
+  }
+
+  // Enforce "exactly one of each"
+  if (_importGeoFile && _importGlbFile) {
+    _importFiles = [_importGeoFile, _importGlbFile];
+    showToast(
+      `<b>📥 Ready to import</b><div class="small">${_importGeoFile.name} + ${_importGlbFile.name}</div>`,
+      2200
+    );
+  } else {
+    _importFiles = [];
+  }
+
+  updateImportUI();
+}
+
+
+// Dropzone wiring
+(function wireDropZone(){
+  const dz = document.getElementById("dropZone");
+  const inp = document.getElementById("importFileInput");
+  if (!dz || !inp) return;
+
+  dz.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dz.style.background = "#f0f7ff";
+    dz.style.borderColor = "#2563eb";
+  });
+
+  dz.addEventListener("dragleave", () => {
+    dz.style.background = "#f8fafc";
+    dz.style.borderColor = "#cbd5e1";
+  });
+
+  dz.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dz.style.background = "#f8fafc";
+    dz.style.borderColor = "#cbd5e1";
+    validateAndSetImportFiles(e.dataTransfer.files);
+  });
+
+  inp.addEventListener("change", (e) => {
+    validateAndSetImportFiles(e.target.files);
+  });
+
+  updateImportUI(); // init state on load
+})();
+
+
+async function fitMapToGeoJSONPath(path) {
+  try {
+    const res = await fetch("/ml/" + path);
+    const gj = await res.json();
+
+    let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+
+    function scan(coords) {
+      coords.forEach(c => {
+        if (typeof c[0] === "number") {
+          minLng = Math.min(minLng, c[0]);
+          minLat = Math.min(minLat, c[1]);
+          maxLng = Math.max(maxLng, c[0]);
+          maxLat = Math.max(maxLat, c[1]);
+        } else scan(c);
+      });
+    }
+
+    (gj.features || []).forEach(f => {
+      if (f?.geometry?.coordinates) scan(f.geometry.coordinates);
+    });
+
+    if (!isFinite(minLng)) return;
+
+    map3d.fitBounds([[minLng, minLat], [maxLng, maxLat]], {
+      padding: 80,
+      duration: 900,
+      maxZoom: 19,
+      pitch: (viewMode === "3d") ? 65 : 0,
+      bearing: (viewMode === "3d") ? -20 : 0
+    });
+  } catch (e) {
+    console.warn("fitMapToGeoJSONPath failed:", e);
+  }
+}
+
+
+async function runImportUpload() {
+  if (!_importFiles || _importFiles.length === 0) {
+    alert("Select or drop .geojson / .glb first.");
+    return;
+  }
+
+  const fd = new FormData();
+  for (const f of _importFiles) fd.append("files", f);
+
+  try {
+    showLoading("Uploading imported files…");
+
+    const res = await fetch("/import_upload", {
+      method: "POST",
+      body: fd
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      hideLoading();
+      throw new Error(data.error || "Import upload failed");
+    }
+
+    // Backend returns { geojson: "imports/...geojson", glb: "imports/...glb" }
+    _importedGeojsonPath = data.geojson || null;
+    _importedGlbPath = data.glb || null;
+
+    // If geojson exists: load into MapLibre like normal pipeline output
+    if (_importedGeojsonPath) {
+      show3DView();
+      showLoading("Loading imported GeoJSON into 3D…");
+      loadBuildings(_importedGeojsonPath);     // your existing function expects relative path
+      apply3DStyleMode();
+
+      map3d.once("idle", async () => {
+        // ✅ zoom to imported geojson extent (not AOI, not CENTER)
+        if (_importedGeojsonPath) {
+          await fitMapToGeoJSONPath(_importedGeojsonPath);
+        }
+        hideLoading();
+        showToast(`<b>✅ Imported GeoJSON loaded</b>`, 1800);
+      });
+    } else {
+      hideLoading();
+    }
+
+    // If GLB exists: open viewer
+    if (_importedGlbPath) {
+      openGlbViewer("/ml/" + _importedGlbPath);
+    }
+
+    // Optional: show export panel so user can re-download easily
+    showExportPanel({
+      geojson: _importedGeojsonPath,
+      glb: _importedGlbPath
+    });
+
+  } catch (e) {
+    console.error(e);
+    hideLoading();
+    alert("Import failed: " + e.message);
+  }
+}
+
+function openGlbViewer(url) {
+  const wrap = document.getElementById("glbViewerWrap");
+  const viewer = document.getElementById("glbViewer");
+  if (!wrap || !viewer) return;
+  viewer.setAttribute("src", url);
+  wrap.style.display = "block";
+}
+
+function closeGlbViewer() {
+  const wrap = document.getElementById("glbViewerWrap");
+  const viewer = document.getElementById("glbViewer");
+  if (viewer) viewer.setAttribute("src", "");
+  if (wrap) wrap.style.display = "none";
+}
+
+
+
+
 /* loader for ml run =============== */
 
 function disableMapInteraction(map) {
@@ -566,10 +975,11 @@ function enableMapInteraction(map) {
 
 /* ================= CONFIG ================= */
 
-mapboxgl.accessToken = "pk.eyJ1IjoidmVlcjEwMjQiLCJhIjoiY21pdTduMnJrMGg5djNxcjRydGp4czc3eiJ9.1qqR0xid2EBNBFNb4TmkMg";
+//mapboxgl.accessToken = "pk.eyJ1IjoidmVlcjEwMjQiLCJhIjoiY21pdTduMnJrMGg5djNxcjRydGp4czc3eiJ9.1qqR0xid2EBNBFNb4TmkMg";
 
 let feedbackPolygons = [];     // array of GeoJSON Polygon
 let currentPolygonLayer = null;
+let viewStyleMode = "satellite"; // "satellite" | "shadowmap"
 
 
 const CENTER = [89.5348056, 28.8863333];
@@ -606,6 +1016,8 @@ let yoloPreviewLayer = null;
 let yoloRectLayer = null;
 let lastAOIBounds = null;   // [west,south,east,north] in EPSG:4326
 
+
+let _walkClickBound = false;
 
  function clearAllDrawControls() {
   try { map2d.removeControl(drawControl); } catch(e){}
@@ -940,11 +1352,27 @@ map2d.on(L.Draw.Event.CREATED, e => {
 
 
 
-const map3d = new mapboxgl.Map({
+// const map3d = new mapboxgl.Map({
+//   container: "map3d",
+//   style: {
+//     version: 8,
+//     glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+//     sources: {},
+//     layers: []
+//   },
+//   center: CENTER,
+//   zoom: 19,
+//   pitch: 65,
+//   bearing: -20,
+//   antialias: true,
+
+//   preserveDrawingBuffer: true
+// });
+
+const map3d = new maplibregl.Map({
   container: "map3d",
   style: {
     version: 8,
-    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
     sources: {},
     layers: []
   },
@@ -953,15 +1381,13 @@ const map3d = new mapboxgl.Map({
   pitch: 65,
   bearing: -20,
   antialias: true,
-
   preserveDrawingBuffer: true
 });
 
 
-
 /* ============= BUILDING HOVER ================== */
 
-const hoverPopup = new mapboxgl.Popup({
+const hoverPopup = new maplibregl.Popup({
   closeButton: false,
   closeOnClick: false,
   offset: 10
@@ -1059,6 +1485,7 @@ async function runAOIML(){
 
     // load buildings into mapbox
     loadBuildings(data.geojson);
+    apply3DStyleMode();
     showExportPanel(data);
 
     // tiles debug
@@ -1101,10 +1528,13 @@ map3d.on("load", () => {
     }
   });
 
+
+  apply3DStyleMode();
+
 });
 
 let p2pLineFeatures = [];
-let p2pLineHoverPopup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
+let p2pLineHoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
 
 function ensureP2PLineLayer() {
   if (map3d.getSource("p2p-lines")) return;
@@ -1250,7 +1680,83 @@ map3d.addLayer(
 );
 
 
+if (!_walkClickBound) {
+  _walkClickBound = true;
+
+
+map3d.on("click", (e) => {
+  // Walk start should work on ANY click (not only buildings)
+  if (walkMode && walkState.awaitingStart) {
+    walkState.awaitingStart = false;
+
+    walkState.lng = e.lngLat.lng;
+    walkState.lat = e.lngLat.lat;
+    walkState.altitude_m = walkState.eyeHeight_m;
+
+    applyFreeCamera(
+      walkState.lng,
+      walkState.lat,
+      walkState.altitude_m,
+      walkState.yaw,
+      walkState.pitch
+    );
+
+    const canvas = map3d.getCanvas();
+    if (canvas && canvas.requestPointerLock) canvas.requestPointerLock();
+
+    showToast(
+      `<b>✅ Start set</b><div class="small">WASD to move · Mouse to look · Esc exit</div>`,
+      2200
+    );
+
+    // IMPORTANT: start the RAF loop now
+    walkState.lastTs = performance.now();
+    if (!walkRAF) walkRAF = requestAnimationFrame(walkTick);
+
+    return;
+  }
+
+  // keep your point-info tool behavior
+  if (p2pMode) { handleP2PClick(e.lngLat.lng, e.lngLat.lat); return; }
+  if (!isAnyDrawingModeActive()) { showPointInfo(e.lngLat.lng, e.lngLat.lat, "3d"); }
+});
+
+}
+
 map3d.on("click", "buildings", e => {
+
+
+     // If we're choosing walk start, don't run building/feedback click logic
+  if (walkMode && walkState.awaitingStart) {
+    e.preventDefault(); // stop default map behavior for this event
+
+    walkState.awaitingStart = false;
+    walkState.lng = e.lngLat.lng;
+    walkState.lat = e.lngLat.lat;
+    walkState.altitude_m = walkState.eyeHeight_m;
+
+    applyFreeCamera(walkState.lng, walkState.lat, walkState.altitude_m, walkState.yaw, walkState.pitch);
+
+    const canvas = map3d.getCanvas();
+    if (canvas && canvas.requestPointerLock) canvas.requestPointerLock();
+
+    showToast(`<b>✅ Start set</b><div class="small">WASD to move · Mouse to look · Esc exit</div>`, 2200);
+
+    // start RAF
+    walkState.lastTs = performance.now();
+    if (!walkRAF) walkRAF = requestAnimationFrame(walkTick);
+
+    return;
+  }
+
+
+  // (your existing p2p/point-info logic continues here...)
+  if (p2pMode) { handleP2PClick(e.lngLat.lng, e.lngLat.lat); return; }
+  if (!isAnyDrawingModeActive()) { showPointInfo(e.lngLat.lng, e.lngLat.lat, "3d"); }
+
+
+
+
   if (!feedbackMode) return;
 
   const type = document.querySelector(
@@ -1269,7 +1775,14 @@ map3d.on("click", "buildings", e => {
 
 
   // Reset highlight
-  map3d.setPaintProperty("buildings", "fill-extrusion-color", "#00FFFF");
+  //map3d.setPaintProperty("buildings", "fill-extrusion-color", "#00FFFF");
+
+  if (highlightedFeatureId !== null && highlightedFeatureId !== feature.id) {
+  map3d.setFeatureState({ source: "buildings", id: highlightedFeatureId }, { selected: false });
+}
+highlightedFeatureId = feature.id;
+map3d.setFeatureState({ source: "buildings", id: highlightedFeatureId }, { selected: true });
+
 
   map3d.setFeatureState(
     { source: "buildings", id: highlightedFeatureId },
@@ -1285,7 +1798,7 @@ map3d.on("click", "buildings", e => {
       "#00FFFF"
     ]);
 
-    new mapboxgl.Popup()
+    new maplibregl.Popup()
       .setLngLat(e.lngLat)
       .setHTML("<b>Marked:</b> 🚫 Not a Building")
       .addTo(map3d);
@@ -1303,7 +1816,7 @@ map3d.on("click", "buildings", e => {
       "#00FFFF"
     ]);
 
-    new mapboxgl.Popup()
+    new maplibregl.Popup()
       .setLngLat(e.lngLat)
       .setHTML("<b>Wrong Geometry</b><br/>Redraw correct footprint in 2D")
       .addTo(map3d);
@@ -1424,6 +1937,430 @@ map3d.on("mouseleave", "building-shadows", () => {
 });
 
 
+// ===============================
+// WALK MODE (First-person FPS)
+// ===============================
+
+let walkMode = false;
+let walkRAF = null;
+
+// const walkState = {
+//   // Camera orientation
+//   yaw: 0,    // radians
+//   pitch: 0,  // radians
+
+//   // Motion
+//   keys: new Set(),
+//   speed_mps: 4.8,       // normal walk speed (m/s)
+//   sprint_mps: 9.6,      // sprint speed
+//   vertical_mps: 3.6,    // up/down speed
+//   eyeHeight_m: 1.1,     // camera height above ground (meters)
+//   mouseSensitivity: 0.0022,
+
+//   // Position
+//   lng: CENTER[0],
+//   lat: CENTER[1],
+//   altitude_m: 1.7,
+
+//   // timing
+//   lastTs: 0
+// };
+
+const walkState = {
+  yaw: 0,
+  pitch: 0,
+  keys: new Set(),
+  speed_mps: 50.8,
+  sprint_mps: 200.6,
+  vertical_mps: 40.6,
+  eyeHeight_m: 1.1,
+  mouseSensitivity: 0.0022,
+  lng: CENTER[0],
+  lat: CENTER[1],
+  altitude_m: 1.0,
+  awaitingStart: false,
+  lastTs: 0
+};
+
+
+function setWalkButtonActive(active) {
+  const btn = document.getElementById("walkBtn");
+  if (!btn) return;
+  if (active) btn.classList.add("tool-active");
+  else btn.classList.remove("tool-active");
+}
+
+function showWalkHud(show) {
+  const hud = document.getElementById("walkHud");
+  if (hud) hud.style.display = show ? "block" : "none";
+}
+
+// Robust: stop other click tools while walking
+function isWalkBlockingTools() {
+  return !!walkMode;
+}
+
+// (Optional) include walkMode in "isAnyDrawingModeActive"
+const _origIsAnyDrawingModeActive = isAnyDrawingModeActive;
+isAnyDrawingModeActive = function() {
+  return _origIsAnyDrawingModeActive() || walkMode;
+};
+
+function toggleWalkMode() {
+  if (!map3d) return;
+
+  if (!walkMode) enterWalkMode();
+  else exitWalkMode();
+}
+
+function enterWalkMode() {
+
+
+  // must be in 3D view
+  show3DView();
+
+  map3d.setMinZoom(map3d.getZoom());
+map3d.setMaxZoom(map3d.getZoom());
+
+  // if model is running, don't enter
+  if (_modelRunning) return;
+
+  // disable other modes to avoid conflicts
+  try {
+    if (p2pMode) toggleP2PDistance();
+  } catch(e){}
+
+  // You may choose to auto-close feedback panels
+  // try { cancelFeedback(); } catch(e){}
+  // try { cancelYOLOFeedback(); } catch(e){}
+
+  walkMode = true;
+  setWalkButtonActive(true);
+  showWalkHud(true);
+
+  // Disable standard map interactions so our camera owns input
+  disableMapboxInteraction(map3d);
+
+  // Init camera pose from current map view
+  const c = map3d.getCenter();
+  walkState.lng = c.lng;
+  walkState.lat = c.lat;
+
+  // Bearing & pitch -> yaw/pitch
+  walkState.yaw = (map3d.getBearing() * Math.PI) / 180.0;
+  walkState.pitch = -(map3d.getPitch() * Math.PI) / 180.0; // negative so mouse up looks up
+
+  // Altitude = eyeHeight (since no terrain)
+  walkState.altitude_m = walkState.eyeHeight_m;
+
+  // Pointer lock for mouse look
+  const canvas = map3d.getCanvas();
+  if (canvas && canvas.requestPointerLock) {
+    canvas.requestPointerLock();
+  }
+
+  // input listeners
+  window.addEventListener("keydown", onWalkKeyDown, { passive: false });
+  window.addEventListener("keyup", onWalkKeyUp, { passive: false });
+  window.addEventListener("mousemove", onWalkMouseMove, { passive: false });
+  document.addEventListener("pointerlockchange", onPointerLockChange, false);
+
+  // Start loop
+  // Start needs a click
+walkState.awaitingStart = true;
+
+// keep orientation from current view
+walkState.yaw = (map3d.getBearing() * Math.PI) / 180.0;
+walkState.pitch = -(map3d.getPitch() * Math.PI) / 180.0;
+walkState.altitude_m = walkState.eyeHeight_m;
+
+showToast(
+  `<b>🚶 Walk Mode enabled</b><div class="small">Click on the 3D map to set your start point. Then use WASD.</div>`,
+  3500
+);
+
+}
+
+function exitWalkMode() {
+
+  map3d.setMinZoom(0);
+map3d.setMaxZoom(24);
+  walkMode = false;
+  setWalkButtonActive(false);
+  showWalkHud(false);
+
+  if (walkRAF) cancelAnimationFrame(walkRAF);
+  walkRAF = null;
+
+  walkState.keys.clear();
+
+  // remove listeners
+  window.removeEventListener("keydown", onWalkKeyDown);
+  window.removeEventListener("keyup", onWalkKeyUp);
+  window.removeEventListener("mousemove", onWalkMouseMove);
+  document.removeEventListener("pointerlockchange", onPointerLockChange);
+
+  // Release pointer lock if held
+  if (document.pointerLockElement) {
+    document.exitPointerLock();
+  }
+
+  // Restore normal interactions
+  enableMapboxInteraction(map3d);
+
+  showToast(`<b>🛑 Walk Mode disabled</b>`, 1600);
+}
+
+function onPointerLockChange() {
+  // If user presses ESC and pointer lock exits, also exit walk mode
+  if (walkMode && !document.pointerLockElement) {
+    // ESC is a natural “exit”
+    exitWalkMode();
+  }
+}
+
+function onWalkKeyDown(e) {
+  if (!walkMode) return;
+
+  // prevent browser scrolling (WASD/space)
+  if (["KeyW","KeyA","KeyS","KeyD","Space"].includes(e.code)) e.preventDefault();
+
+  // ESC exits
+  if (e.code === "Escape") {
+    exitWalkMode();
+    return;
+  }
+
+  walkState.keys.add(e.code);
+}
+
+function onWalkKeyUp(e) {
+  if (!walkMode) return;
+  walkState.keys.delete(e.code);
+}
+
+function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+
+function onWalkMouseMove(e) {
+  if (!walkMode) return;
+  if (!document.pointerLockElement) return;
+
+  // Mouse look
+  walkState.yaw   -= e.movementX * walkState.mouseSensitivity;
+  walkState.pitch -= e.movementY * walkState.mouseSensitivity;
+
+  // clamp pitch (avoid flipping)
+  //const maxPitch = Math.PI * 0.49;
+  const maxPitch = Math.PI * 0.35;
+  walkState.pitch = clamp(walkState.pitch, -maxPitch, maxPitch);
+}
+
+function metersToLngLatDeltaMetersBasis(lng, lat, east_m, north_m) {
+  // Convert local ENU meters to lon/lat deltas.
+  // This approximation is good for small steps (walking).
+  const latRad = lat * Math.PI / 180.0;
+  const mPerDegLat = 111132.92 - 559.82*Math.cos(2*latRad) + 1.175*Math.cos(4*latRad);
+  const mPerDegLon = 111412.84*Math.cos(latRad) - 93.5*Math.cos(3*latRad);
+
+  const dLat = north_m / mPerDegLat;
+  const dLng = east_m  / mPerDegLon;
+  return [dLng, dLat];
+}
+
+function applyFreeCamera(lng, lat, altitude_m, yaw, pitch) {
+  // If your MapLibre build supports FreeCamera, use it.
+  if (typeof map3d.getFreeCameraOptions === "function" &&
+      typeof map3d.setFreeCameraOptions === "function") {
+
+    const cam = map3d.getFreeCameraOptions();
+
+    cam.position = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], altitude_m);
+
+    const forwardEast  = Math.sin(yaw) * Math.cos(pitch);
+    const forwardNorth = Math.cos(yaw) * Math.cos(pitch);
+    const forwardUp    = Math.sin(pitch);
+
+    const lookDist = 8.0;
+    const [dLng, dLat] = metersToLngLatDeltaMetersBasis(
+      lng, lat,
+      forwardEast * lookDist,
+      forwardNorth * lookDist
+    );
+
+    const targetLng = lng + dLng;
+    const targetLat = lat + dLat;
+    const targetAlt = altitude_m + forwardUp * lookDist;
+
+    if (typeof cam.lookAtPoint === "function") {
+      cam.lookAtPoint([targetLng, targetLat], targetAlt);
+    }
+    map3d.setFreeCameraOptions(cam);
+    return;
+  }
+
+  // Fallback: classic camera control (works on all MapLibre versions)
+  map3d.jumpTo({
+    center: [lng, lat],
+    bearing: (yaw * 180) / Math.PI,
+    pitch: (-pitch * 180) / Math.PI
+    // keep current zoom
+  });
+
+  // ensure render keeps up
+  map3d.triggerRepaint();
+}
+
+function walkTick(ts) {
+  if (!walkMode) return;
+
+  const dt = Math.min(0.05, Math.max(0.001, (ts - walkState.lastTs) / 1000.0));
+  walkState.lastTs = ts;
+
+  const k = walkState.keys;
+
+  const sprint = k.has("ShiftLeft") || k.has("ShiftRight");
+  const speed = sprint ? walkState.sprint_mps : walkState.speed_mps;
+
+  // movement in local ENU meters
+  let forward = 0, strafe = 0, vertical = 0;
+
+  if (k.has("KeyW")) forward += 1;
+  if (k.has("KeyS")) forward -= 1;
+  if (k.has("KeyD")) strafe += 1;
+  if (k.has("KeyA")) strafe -= 1;
+
+  if (k.has("Space")) vertical += 1;  // up
+  if (k.has("KeyC")) vertical -= 1;   // down
+
+  // normalize horizontal
+  const mag = Math.hypot(forward, strafe);
+  if (mag > 0) { forward /= mag; strafe /= mag; }
+
+  // Convert forward/strafe into east/north using yaw
+  // yaw=0 => north, yaw=90deg => east
+  const sinY = Math.sin(walkState.yaw);
+  const cosY = Math.cos(walkState.yaw);
+
+  const north_m = (forward * cosY - strafe * sinY) * speed * dt;
+  const east_m  = (forward * sinY + strafe * cosY) * speed * dt;
+
+  const [dLng, dLat] = metersToLngLatDeltaMetersBasis(walkState.lng, walkState.lat, east_m, north_m);
+  walkState.lng += dLng;
+  walkState.lat += dLat;
+
+  walkState.altitude_m = walkState.eyeHeight_m;
+
+  // Apply
+  applyFreeCamera(walkState.lng, walkState.lat, walkState.altitude_m, walkState.yaw, walkState.pitch);
+
+  walkRAF = requestAnimationFrame(walkTick);
+}
+
+// Make canvas click re-acquire pointer lock while walking
+map3d.getCanvas().addEventListener("click", () => {
+  if (!walkMode) return;
+  if (!document.pointerLockElement && map3d.getCanvas().requestPointerLock) {
+    map3d.getCanvas().requestPointerLock();
+  }
+});
+ 
+ /* 3d map walk */
+/* satellite view */
+
+function toggle3DStyle() {
+  viewStyleMode = (viewStyleMode === "satellite") ? "shadowmap" : "satellite";
+  apply3DStyleMode();
+}
+
+function apply3DStyleMode() {
+  if (!map3d) return;
+
+  // --- ids you already use ---
+  const RASTER_LAYER_ID = "custom-tiles-layer";
+  const BUILDINGS_LAYER_ID = "buildings";
+  const SHADOWS_LAYER_ID = "building-shadows";
+  const BG_LAYER_ID = "shadowmap-bg";
+
+  const isShadow = (viewStyleMode === "shadowmap");
+
+  // Ensure background layer exists (MapLibre supports "background" layer)
+  try {
+    if (!map3d.getLayer(BG_LAYER_ID)) {
+      map3d.addLayer({
+        id: BG_LAYER_ID,
+        type: "background",
+        paint: { "background-color": "#f6f0d6", "background-opacity": 1.0 }
+      }, RASTER_LAYER_ID); // insert before raster if possible
+    }
+  } catch (e) {
+    // if raster layer not yet added, background will be added later
+    // safe to ignore
+  }
+
+  // Background on/off
+  try {
+    if (map3d.getLayer(BG_LAYER_ID)) {
+      map3d.setLayoutProperty(BG_LAYER_ID, "visibility", isShadow ? "visible" : "none");
+      map3d.setPaintProperty(BG_LAYER_ID, "background-color", "#f6f0d6");
+      map3d.setPaintProperty(BG_LAYER_ID, "background-opacity", 1.0);
+    }
+  } catch(e){}
+
+  // Raster tiles fade/disable
+  try {
+    if (map3d.getLayer(RASTER_LAYER_ID)) {
+      map3d.setPaintProperty(RASTER_LAYER_ID, "raster-opacity", isShadow ? 0.12 : 1.0);
+      map3d.setLayoutProperty(RASTER_LAYER_ID, "visibility", "visible"); // keep layer alive
+    }
+  } catch(e){}
+
+  // Buildings color change
+  try {
+    if (map3d.getLayer(BUILDINGS_LAYER_ID)) {
+      if (isShadow) {
+        // Solid dark grey blocks (still respects hover/selected if you want)
+        map3d.setPaintProperty(BUILDINGS_LAYER_ID, "fill-extrusion-color", [
+          "case",
+          ["boolean", ["feature-state", "selected"], false], "#00FFFF",
+          ["boolean", ["feature-state", "hover"], false], "#8000FF",
+          "#2f2f2f" // dark grey blocks
+        ]);
+        map3d.setPaintProperty(BUILDINGS_LAYER_ID, "fill-extrusion-opacity", 0.95);
+      } else {
+        // Restore your confidence-based colors
+        map3d.setPaintProperty(BUILDINGS_LAYER_ID, "fill-extrusion-color", [
+          "case",
+          ["boolean", ["feature-state", "selected"], false], "#00FFFF",
+          ["boolean", ["feature-state", "hover"], false], "#8000FF",
+          ["interpolate", ["linear"], ["get", "confidence"],
+            0.4, "#FF3333",
+            0.7, "#FFA500",
+            0.9, "#00FF99"
+          ]
+        ]);
+        map3d.setPaintProperty(BUILDINGS_LAYER_ID, "fill-extrusion-opacity", 0.85);
+      }
+    }
+  } catch(e){}
+
+  // Optional: shadows layer visibility (up to you)
+  try {
+    if (map3d.getLayer(SHADOWS_LAYER_ID)) {
+      map3d.setLayoutProperty(SHADOWS_LAYER_ID, "visibility", isShadow ? "none" : "visible");
+    }
+  } catch(e){}
+
+  showToast(
+    isShadow
+      ? `<b>🟨 Shadowmap view</b><div class="small">Buildings only (dark grey) on light background</div>`
+      : `<b>🛰 Satellite view</b><div class="small">Raster tiles + normal building colors</div>`,
+    2200
+  );
+}
+
+
+
+
 /* P2P distance calculator */
 
 /* ================= P2P + POINT INFO TOOLING ================= */
@@ -1443,8 +2380,8 @@ function showToast(html, ms = 2200) {
 
 // ---------- Mode helpers ----------
 function isAnyDrawingModeActive() {
-  // If any of these are true, DO NOT show "point info" click popups
-  return !!(feedbackMode || yoloMode || aoiDrawActive || p2pMode);
+  // If any of these are true, DO NOT show point info popups, and don't let other tools capture clicks
+  return !!(feedbackMode || yoloMode || aoiDrawActive || p2pMode || walkMode);
 }
 
 // ---------- Distance helpers ----------
@@ -1584,7 +2521,7 @@ function addLeafletLine(a, b, distanceMeters, segIndex) {
 
 
 function addMapboxLabel(lng, lat, html) {
-  const popup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 12 })
+  const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 })
     .setLngLat([lng, lat])
     .setHTML(`<div style="
       background: rgba(255,255,255,0.92);
@@ -1609,7 +2546,7 @@ function addMapboxDot(lng, lat) {
   el.style.borderRadius = "50%";
   el.style.border = "2px solid #fff";
   el.style.background = "#2563eb";
-  const mk = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map3d);
+  const mk = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map3d);
   p2pMarkers3D.push(mk);
   return mk;
 }
@@ -1791,7 +2728,7 @@ function showPointInfo(lng, lat, source = "2d") {
     // close previous 3D popup
     closePointInfo("3d");
 
-    const pop = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 12 })
+    const pop = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 })
       .setLngLat([lng, lat])
       .setHTML(html)
       .addTo(map3d);
@@ -1849,18 +2786,59 @@ map2d.on("click", (e) => {
 });
 
 // ---------- Hook 3D click (general map click) ----------
+
+
 map3d.on("click", (e) => {
-  // If P2P is on, capture (but not if feedbackMode etc is active)
+
+  // 🔒 WALK START SELECTION (highest priority)
+  if (walkMode && walkState.awaitingStart) {
+    e.preventDefault();
+    e.originalEvent?.stopPropagation?.();
+
+    walkState.awaitingStart = false;
+
+    walkState.lng = e.lngLat.lng;
+    walkState.lat = e.lngLat.lat;
+
+    // ⬇ altitude will be fixed later (grounded)
+    walkState.altitude_m = walkState.eyeHeight_m;
+
+    applyFreeCamera(
+      walkState.lng,
+      walkState.lat,
+      walkState.altitude_m,
+      walkState.yaw,
+      walkState.pitch
+    );
+
+    const canvas = map3d.getCanvas();
+    canvas?.requestPointerLock?.();
+
+    walkState.lastTs = performance.now();
+    if (!walkRAF) walkRAF = requestAnimationFrame(walkTick);
+
+    showToast(
+      `<b>🚶 Walk started</b><div class="small">WASD move · Mouse look · Esc exit</div>`,
+      2600
+    );
+    return;
+  }
+
+  // ❌ while walking, ignore other clicks
+  if (walkMode) return;
+
+  // 📏 P2P
   if (p2pMode) {
     handleP2PClick(e.lngLat.lng, e.lngLat.lat);
     return;
   }
 
-  // Only show point info when truly idle
+  // 📍 idle info
   if (!isAnyDrawingModeActive()) {
     showPointInfo(e.lngLat.lng, e.lngLat.lat, "3d");
   }
 });
+
 
 // Also: if user hits Clear, ensure p2p button resets visually
 // (Your clearAll already disables p2p; just add this line inside clearAll after p2pMode=false)
